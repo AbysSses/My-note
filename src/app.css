@@ -1,0 +1,161 @@
+:root {
+  /* color - Light Mode (Quire Aesthetic) */
+  --color-bg: oklch(0.981 0.004 49);
+  --color-bg-subtle: oklch(0.981 0.004 49); /* we'll make base app bg this color */
+  --color-surface: oklch(0.992 0.002 49);
+  --color-card: var(--color-surface);
+  --color-bg-hover: rgba(40, 30, 20, 0.035);
+  --color-fg: oklch(0.18 0.008 60);
+  --color-fg-muted: oklch(0.48 0.01 60);
+  --color-fg-dim: oklch(0.62 0.008 60);
+  --color-border: rgba(40, 30, 20, 0.07);
+  --color-accent: oklch(0.62 0.13 38);
+  --color-accent-weak: oklch(0.62 0.13 38 / 0.18);
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+
+  /* glassmorphism & panels */
+  --glass-bg: oklch(0.981 0.004 49 / 0.85);
+  --glass-border: rgba(40, 30, 20, 0.07);
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
+  --pane-border: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(40, 30, 20, 0.04), 0 8px 24px -12px rgba(40, 30, 20, 0.12);
+
+  /* typography */
+  --font-sans: 'Inter Tight', 'Inter', system-ui, sans-serif;
+  --font-serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, 'SF Mono', Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+  --fs-3xl: 32px;
+
+  /* spacing (multiples of 4px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  /* layout sizes */
+  --sidebar-width: 280px;
+  --panel-width: 300px;
+  --statusbar-height: 28px;
+}
+
+/* Explicit override (takes precedence over OS preference). */
+:root[data-theme='dark'] {
+  --color-bg: oklch(0.159 0.014 284);
+  --color-bg-subtle: oklch(0.159 0.014 284);
+  --color-surface: oklch(0.196 0.015 285);
+  --color-card: var(--color-surface);
+  --color-bg-hover: rgba(255, 255, 255, 0.04);
+  --color-fg: oklch(0.96 0.005 270);
+  --color-fg-muted: oklch(0.72 0.01 270);
+  --color-fg-dim: oklch(0.52 0.012 270);
+  --color-border: rgba(255, 255, 255, 0.055);
+  --color-accent: oklch(0.72 0.13 38);
+  --color-accent-weak: oklch(0.72 0.13 38 / 0.18);
+  --pane-border: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.4), 0 1px 0 rgba(0, 0, 0, 0.3);
+  --glass-bg: oklch(0.159 0.014 284 / 0.85);
+  --glass-border: rgba(255, 255, 255, 0.055);
+
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+
+  /* glassmorphism dark */
+  --glass-bg: rgba(35, 34, 32, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+/* System default — only applies when the user hasn't picked a theme manually. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg: #1A1918;
+    --color-bg-subtle: #232220;
+    --color-bg-hover: #312F2D;
+    --color-fg: #E1DFD9;
+    --color-fg-muted: #8E8B83;
+    --color-border: #3A3835;
+    --color-accent: #D47761;
+    --color-accent-weak: rgba(212, 119, 97, 0.15);
+    --color-success: #4ade80;
+    --color-warning: #fbbf24;
+    --color-danger: #f87171;
+
+    --glass-bg: rgba(35, 34, 32, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: var(--color-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+button:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transform: translateY(-0.5px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button.primary {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+
+button.primary:hover {
+  opacity: 0.9;
+}

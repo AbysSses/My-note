@@ -1,0 +1,34 @@
+# Node
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# SvelteKit
+/build
+/.svelte-kit
+/package
+.env
+.env.*
+!.env.example
+
+# Vite
+.vite
+
+# Rust / Tauri
+/src-tauri/target
+/src-tauri/gen
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
