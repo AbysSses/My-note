@@ -12,6 +12,25 @@
 
 ---
 
+## 2026-04-26 · Phase 4 Stage 1.5 — ChatPanel mock 抽到独立模块
+
+- **Scope**
+  - 把 `ChatPanel.svelte` 里的 `mockSessionSeq` / `mockNow` / `mockCreateSession` / `mockSessionSummary` / `mockSleep` / `sendMock`（共 ~250 行）整体迁出到新文件 `src/lib/e2e/mockChatScripts.ts`。新模块导出三个独立 helper（`mockNow` / `mockSleep` / `mockCreateSession` / `mockSessionSummary`）+ `runMockSend(text, handles)` 主循环。
+  - 新增 `MockChatHandles` 接口作为「mock 能动的 panel 状态视图」，明确暴露 `getActiveSession` / `getFilePath` / `isCancelRequested` 三个 getter + 一组 setter / appender + `tick()`。ChatPanel 用 `makeMockHandles()` 构造一个 11 个字段的适配器对象传进 `runMockSend`，`sendMock` 函数压缩成一行：`await runMockSend(text, makeMockHandles())`。
+  - `mockCancelRequested = $state(false)` 留在 ChatPanel —— 它和 cancel 按钮 click handler 强耦合，跨模块导出 Svelte rune 会复杂化代码；mock 通过 handles 的 `isCancelRequested` / `resetCancelRequested` 读写它。
+  - `deriveSessionTitle` 是 mockChatScripts 内部的 fall-through 标题函数，不复用 ChatPanel 的 `deriveTitle`（避免反向依赖）。
+  - 约束：不改 mock 的行为脚本，只搬位置；E2E 断言（`Mock 流式回复` / `找到 1 条结果` / `请基于刚才对` / `回收站` 等）继续生效。
+- **How to verify**
+  - `pnpm check` → **0 errors / 0 warnings**
+  - `wc -l ChatPanel.svelte` → **2330 → 2234**（-96 净减；`mockChatScripts.ts` 新 360 行，`makeMockHandles` 在 ChatPanel 占 ~50 行）
+  - `grep -nw mockNow src/lib/panel/ChatPanel.svelte` → 0 引用（只在 mockChatScripts 内部使用）
+  - `grep -n "mockSessionSummary\|mockCreateSession" src/lib/panel/ChatPanel.svelte` → 仅 import 行 + `refreshSessions` / `createNewSession` 的两个 mock 分支（这两处不能复用 `runMockSend`，是单独的 session 创建路径）
+  - 生产构建依然零 mock 残留：ChatPanel 的 `if (e2eMockMode) { … sendMock(text) … }` 在 `PUBLIC_E2E` 未设时被 Vite DCE 干掉 → `sendMock` 引用失效 → `runMockSend` 引用失效 → 整个 `mockChatScripts.ts` 模块被 Rollup tree-shake 出 bundle
+- **Known gaps / next**
+  - **mock script 还是按关键词分支 hard-coded**：if-text-contains 链长度固定，不易加新场景。下一步若要 fuzz，可把分支表抽成 `MockChatScenario[]`（match: (text)=>bool / produce: (handles)=>void），让脚本可枚举可独立测。
+  - **`mockChatScripts.ts` 没单测**：当前依赖 E2E 间接覆盖。若把它当 fuzz harness 用，需要补一组 vitest（验各分支的事件序列 / chunk 顺序 / 终态）。
+  - **`MockChatHandles` 暴露 11 个字段**：边界还能再收窄（合并 `setStreamingContent`+`appendStreamingContent` 为一个 `streamingContent: { set, append }` 子对象等），但当前形式与 `ChatPanel` 内部状态命名一一对应、改动最小、可读性最高，先这样。
+
 ## 2026-04-26 · Phase 4 首轮硬化 — Stage 0~6 一刀打包
 
 - **Scope**

@@ -60,7 +60,7 @@
 - [ ] 验证 cancel-before-first-token 文案与保留弹窗行为
 - [ ] 验证 cancel IPC 自身失败时 modal 保持打开并展示错误
 - [ ] CI 首跑（pushed workflow 后看 frontend / rust 两个 job 是否绿；按报错调一两轮）
-- [ ] 把 ChatPanel 内嵌 mock script 拆到 `src/lib/e2e/mockChatScripts.ts`（DCE 已经干净，但散在组件里不利于 fuzz）
+- [x] 把 ChatPanel 内嵌 mock script 拆到 `src/lib/e2e/mockChatScripts.ts`（ChatPanel 2330 → 2234 行；mock 通过 `MockChatHandles` 适配器读写 panel 状态；`runMockSend` 一行调用）
 - [ ] proposal 镜像跨设备同步（如需要）：`.mynotes/ai/chats/<session>.resolutions.jsonl` + 一个轻 IPC
 
 ## P3-D4 后续候选

@@ -33,6 +33,12 @@
     loadResolutionsForSession,
     persistResolution
   } from '$lib/chat/proposalResolutionStore';
+  import {
+    mockCreateSession,
+    mockSessionSummary,
+    runMockSend,
+    type MockChatHandles
+  } from '$lib/e2e/mockChatScripts';
   import ProposalCard from '$lib/chat/ProposalCard.svelte';
   import ToolCallCard from '$lib/chat/ToolCallCard.svelte';
   import { toolTraceLabel } from '$lib/chat/toolLabels';
@@ -171,43 +177,13 @@
   let proposalResolutionByKey = $state<
     Record<string, { kind: 'accepted' | 'rejected' | 'error'; message: string }>
   >({});
-  let mockSessionSeq = 0;
+  // Phase 4 Stage 1.5 — the mock session counter, helpers, and the
+  // streaming send loop all live in `src/lib/e2e/mockChatScripts.ts`
+  // so the panel file is no longer 250 lines fatter just to host
+  // them. We keep `mockCancelRequested` here because it's tied to the
+  // panel's `cancel()` button click handler; runMockSend reads it
+  // through the `MockChatHandles` adapter.
   let mockCancelRequested = $state(false);
-
-  function mockNow(): number {
-    return Math.floor(Date.now() / 1000);
-  }
-
-  function mockCreateSession(title: string, relatedNote: string | null): ChatSessionFull {
-    mockSessionSeq += 1;
-    const sessionId = `mock-session-${mockSessionSeq}`;
-    const createdAt = mockNow();
-    return {
-      meta: {
-        v: 1,
-        session_id: sessionId,
-        title,
-        created_at: createdAt,
-        related_note: relatedNote ?? undefined
-      },
-      messages: []
-    };
-  }
-
-  function mockSessionSummary(full: ChatSessionFull): ChatSessionSummary {
-    return {
-      session_id: full.meta.session_id,
-      title: full.meta.title,
-      created_at: full.meta.created_at,
-      message_count: full.messages.length,
-      last_message_at: full.messages.at(-1)?.created_at,
-      related_note: full.meta.related_note
-    };
-  }
-
-  async function mockSleep(ms: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  }
 
   // ── New-session modal state (D2b.5) ───────────────────────────────
   //
@@ -819,202 +795,65 @@
     }
   }
 
+  /**
+   * Phase 4 Stage 1.5 — sendMock is now a one-liner that hands the
+   * message to `runMockSend` in `src/lib/e2e/mockChatScripts.ts`. The
+   * `MockChatHandles` adapter exposes the slice of panel state that
+   * the script needs (active session, sessions list, streaming
+   * buffer, …) without leaking the entire component API. Production
+   * builds drop the import via Vite tree-shake (see e2eMockMode docs
+   * above).
+   */
+  function makeMockHandles(): MockChatHandles {
+    return {
+      getActiveSession: () => activeSession,
+      getFilePath: () => filePath,
+      isCancelRequested: () => mockCancelRequested,
+      setActiveSession: (s) => {
+        activeSession = s;
+      },
+      setActiveSessionId: (id) => {
+        activeSessionId = id;
+      },
+      setLastResolvedSessionId: (id) => {
+        lastResolvedSessionId = id;
+      },
+      setSessions: (list) => {
+        sessions = list;
+      },
+      setSending: (busy) => {
+        sending = busy;
+      },
+      setLastFailure: (f) => {
+        lastFailure = f;
+      },
+      setComposeText: (t) => {
+        composeText = t;
+      },
+      setStreamingContent: (t) => {
+        streamingContent = t;
+      },
+      appendStreamingContent: (chunk) => {
+        streamingContent += chunk;
+      },
+      setInlineToolEvents: (evts) => {
+        inlineToolEvents = evts;
+      },
+      appendInlineToolEvent: (evt) => {
+        inlineToolEvents = [...inlineToolEvents, evt];
+      },
+      setPendingCitations: (c) => {
+        pendingCitations = c;
+      },
+      resetCancelRequested: () => {
+        mockCancelRequested = false;
+      },
+      tick
+    };
+  }
+
   async function sendMock(text: string): Promise<void> {
-    let session = activeSession;
-    if (!session) {
-      const created = mockCreateSession(deriveTitle(text), filePath ?? null);
-      session = created;
-      activeSession = created;
-      activeSessionId = created.meta.session_id;
-      lastResolvedSessionId = created.meta.session_id;
-      sessions = [mockSessionSummary(created)];
-    }
-    const userMsg: ChatMessage = {
-      v: 1,
-      id: `mock-user-${Date.now()}`,
-      role: 'user',
-      content: text,
-      created_at: mockNow()
-    };
-    activeSession = {
-      ...session,
-      messages: [...session.messages, userMsg]
-    };
-    sessions = [mockSessionSummary(activeSession)];
-    sending = true;
-    lastFailure = null;
-    mockCancelRequested = false;
-    composeText = '';
-    streamingContent = '';
-    inlineToolEvents = [];
-    pendingCitations = [];
-    await tick();
-
-    const wantsFailure = text.includes('失败') || text.includes('超时');
-    const wantsDestructiveProposal = text.includes('删除提案') || text.includes('rename提案');
-    const wantsProposal = wantsDestructiveProposal || text.includes('提案') || text.includes('summary');
-    const wantsTool = wantsProposal || text.includes('搜索') || text.includes('tool');
-    const wantsLongStream = text.includes('取消测试');
-
-    if (wantsFailure) {
-      lastFailure = {
-        kind: text.includes('超时') ? 'network' : 'other',
-        message: text.includes('超时') ? 'mock timeout' : 'mock provider failure',
-        user_message_persisted: true
-      };
-      sending = false;
-      return;
-    }
-    let mockToolCallId: string | null = null;
-    if (wantsTool) {
-      const callId = `mock-call-${Date.now()}`;
-      mockToolCallId = callId;
-      inlineToolEvents = [
-        ...inlineToolEvents,
-        {
-          kind: 'requested',
-          call_id: callId,
-          name: wantsProposal
-            ? wantsDestructiveProposal
-              ? 'delete_note'
-              : 'propose_summary'
-            : 'search_by_tag',
-          arguments: wantsProposal
-            ? wantsDestructiveProposal
-              ? JSON.stringify({ target_rel_path: filePath ?? '1-notes/mock-note.md' })
-              : JSON.stringify({
-                  target_rel_path: filePath ?? '1-notes/mock-note.md',
-                  target: 'frontmatter'
-                })
-            : JSON.stringify({ tag: 'project', limit: 5 })
-        }
-      ];
-      await mockSleep(120);
-      const proposalPayload = JSON.stringify(
-        {
-          proposal_kind: wantsDestructiveProposal ? 'delete_note' : 'summary',
-          target_rel_path: filePath ?? '1-notes/mock-note.md',
-          original_content: '---\ntitle: Mock Note\n---\n\n原始内容',
-          proposed_content: wantsDestructiveProposal
-            ? ''
-            : '---\ntitle: Mock Note\nsummary: 这是一条 Mock 摘要\n---\n\n原始内容',
-          summary: wantsDestructiveProposal ? '删除目标笔记' : '为当前笔记补充 frontmatter.summary'
-        },
-        null,
-        2
-      );
-      inlineToolEvents = [
-        ...inlineToolEvents,
-        {
-          kind: 'result',
-          call_id: callId,
-          content: wantsProposal
-            ? proposalPayload
-            : JSON.stringify(
-                {
-                  hits: [{ path: '1-notes/mock-note.md', title: 'Mock Note' }]
-                },
-                null,
-                2
-              ),
-          is_error: false
-        }
-      ];
-    }
-
-    const chunks = wantsProposal
-      ? wantsDestructiveProposal
-        ? ['我已生成删除提案，请二次确认。']
-        : ['我已生成摘要提案，请确认是否接受。']
-      : wantsLongStream
-      ? ['这是 ', '一个 ', '可取消 ', '的 ', 'Mock ', '长回复。']
-      : wantsTool
-      ? ['已为你搜索 ', '#project', '，找到 1 条结果。']
-      : ['这是 ', '一条 ', 'Mock 流式回复。'];
-    for (const chunk of chunks) {
-      if (mockCancelRequested) break;
-      streamingContent += chunk;
-      await mockSleep(90);
-    }
-
-    if (activeSession) {
-      if (wantsProposal && mockToolCallId) {
-        const proposalAssistantId = `mock-assistant-tool-${Date.now()}`;
-        const toolCall = {
-          id: mockToolCallId,
-              name: wantsDestructiveProposal ? 'delete_note' : 'propose_summary',
-          arguments: JSON.stringify({
-                target_rel_path: filePath ?? '1-notes/mock-note.md'
-          })
-        };
-        const toolMsg: ChatMessage = {
-          v: 1,
-          id: `mock-tool-${Date.now()}`,
-          role: 'tool',
-          content: JSON.stringify(
-            {
-              proposal_kind: 'summary',
-              target_rel_path: filePath ?? '1-notes/mock-note.md',
-              original_content: '---\ntitle: Mock Note\n---\n\n原始内容',
-              proposed_content: wantsDestructiveProposal
-                ? ''
-                : '---\ntitle: Mock Note\nsummary: 这是一条 Mock 摘要\n---\n\n原始内容',
-              summary: wantsDestructiveProposal ? '删除目标笔记' : '为当前笔记补充 frontmatter.summary'
-            },
-            null,
-            2
-          ),
-          created_at: mockNow(),
-          tool_call_id: mockToolCallId
-        };
-        const assistantMsg: ChatMessage = {
-          v: 1,
-          id: `mock-assistant-${Date.now()}`,
-          role: 'assistant',
-          content: streamingContent || '已取消，保留部分内容。',
-          created_at: mockNow()
-        };
-        activeSession = {
-          ...activeSession,
-          messages: [
-            ...activeSession.messages,
-            {
-              v: 1,
-              id: proposalAssistantId,
-              role: 'assistant',
-              content: '',
-              created_at: mockNow(),
-              tool_calls: [toolCall]
-            },
-            toolMsg,
-            assistantMsg
-          ]
-        };
-      } else {
-        const assistantMsg: ChatMessage = {
-          v: 1,
-          id: `mock-assistant-${Date.now()}`,
-          role: 'assistant',
-          content: streamingContent || '已取消，保留部分内容。',
-          created_at: mockNow()
-        };
-        activeSession = {
-          ...activeSession,
-          messages: [...activeSession.messages, assistantMsg]
-        };
-      }
-      sessions = [mockSessionSummary(activeSession)];
-    }
-    if (mockCancelRequested) {
-      lastFailure = {
-        kind: 'other',
-        message: 'mock cancelled',
-        user_message_persisted: true
-      };
-    }
-    streamingContent = '';
-    inlineToolEvents = [];
-    sending = false;
+    await runMockSend(text, makeMockHandles());
   }
 
   async function cancelStreaming(): Promise<void> {
