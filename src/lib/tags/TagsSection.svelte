@@ -92,26 +92,31 @@
 
 <style>
   .tags-section {
-    border-top: 1px solid var(--color-border);
+    box-shadow: inset 0 1px 0 var(--color-border);
     margin-top: var(--space-2);
+    padding-top: var(--space-1);
   }
   .tags-header {
     display: flex;
     align-items: center;
     width: 100%;
     gap: 6px;
-    padding: 6px 10px;
+    padding: 8px 12px;
     background: transparent;
     border: none;
-    color: var(--color-fg-muted);
+    box-shadow: none;
+    color: var(--color-fg-dim);
+    font-family: var(--font-mono);
     font-size: var(--fs-xs);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-weight: 500;
     cursor: pointer;
   }
   .tags-header:hover {
     color: var(--color-fg);
+    background: transparent;
+    transform: none;
   }
   .chev {
     width: 14px;
@@ -141,21 +146,29 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    width: 100%;
-    padding: 3px 10px 3px 26px;
+    width: calc(100% - 12px);
+    margin: 1px 6px;
+    padding: 4px 10px 4px 22px;
     border: none;
     background: transparent;
+    box-shadow: none;
     text-align: left;
     color: inherit;
     font-size: 13px;
     cursor: pointer;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s ease, transform 0.15s ease;
   }
   .tag-row:hover {
     background: var(--color-bg-hover);
+    transform: translateX(2px);
   }
   .tag-row.active {
     background: var(--color-bg-hover);
+    color: var(--color-fg);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+  .tag-row.active .hash {
     color: var(--color-accent);
   }
   .hash {

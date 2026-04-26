@@ -34,11 +34,13 @@ pub struct ParsedNote {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ParsedLink {
-    /// The raw `[[target]]` as the user typed it (no brackets, no alias).
+    /// For `wiki`: the raw `[[target]]` text (no brackets, no alias).
+    /// For `embed`: the raw path inside `![alt](path)`.
     pub dst: String,
-    /// Always "wiki" for now; "markdown" / "embed" come later.
+    /// "wiki" — standard `[[...]]` link.
+    /// "embed" — standard markdown `![alt](path)` image, local path only.
     pub link_type: &'static str,
-    /// Byte offset within the **whole file** of the `[[`.
+    /// Byte offset within the **whole file** of the `[[` / `![`.
     pub position: usize,
 }
 
@@ -48,6 +50,12 @@ pub struct ParsedTask {
     pub line: usize,
     pub text: String,
     pub done: bool,
+    /// ISO `YYYY-MM-DD` extracted from inline markers (`📅 2026-04-22`,
+    /// `@2026-04-22`, or a standalone ISO date token). `None` when absent.
+    pub due: Option<String>,
+    /// One of `urgent | high | med | low`, extracted from inline markers
+    /// (`!urgent`, `🔺`, etc.). `None` when absent.
+    pub priority: Option<String>,
 }
 
 /// Parse one note. Pure — does not touch the filesystem or DB.
@@ -242,10 +250,13 @@ fn scan_body(body: &str, body_offset: usize) -> (Vec<String>, Vec<ParsedLink>, V
 
         // --- task lines ---
         if let Some(task) = parse_task_line(trimmed) {
+            let (priority, due) = extract_task_meta(&task.text);
             tasks.push(ParsedTask {
                 line: line_no,
                 text: task.text,
                 done: task.done,
+                due,
+                priority,
             });
         }
 
@@ -254,6 +265,18 @@ fn scan_body(body: &str, body_offset: usize) -> (Vec<String>, Vec<ParsedLink>, V
             links.push(ParsedLink {
                 dst: raw_target,
                 link_type: "wiki",
+                position: abs_pos,
+            });
+        }
+
+        // --- markdown image embeds `![alt](path)` ---
+        //
+        // Only local paths (attachments/... etc.) count; URLs are skipped. This
+        // feeds the attachment orphan-cleanup query (see §6.12.6).
+        for (abs_pos, raw_path) in find_markdown_images(trimmed, line_start_abs) {
+            links.push(ParsedLink {
+                dst: raw_path,
+                link_type: "embed",
                 position: abs_pos,
             });
         }
@@ -280,29 +303,109 @@ struct TaskHit {
     done: bool,
 }
 
+/// Pull priority + due-date hints out of a task's body text.
+///
+/// Recognized priority tokens (whole-word, any position in text):
+///   `!urgent` / `!high` / `!med` / `!low`   (ASCII)
+///   `🔺` → urgent, `🔶` → high, `🟡` → med, `⬇️` → low   (emoji shorthand)
+///
+/// Recognized date tokens:
+///   `📅 YYYY-MM-DD` (emoji + space), `@YYYY-MM-DD`, or a bare
+///   ISO date surrounded by word boundaries.
+fn extract_task_meta(text: &str) -> (Option<String>, Option<String>) {
+    let priority = detect_priority(text);
+    let due = detect_due(text);
+    (priority, due)
+}
+
+fn detect_priority(text: &str) -> Option<String> {
+    // Emoji markers first — cheap contains checks.
+    if text.contains('🔺') {
+        return Some("urgent".into());
+    }
+    if text.contains('🔶') {
+        return Some("high".into());
+    }
+    if text.contains('🟡') {
+        return Some("med".into());
+    }
+    // ⬇ with optional variation selector
+    if text.contains('⬇') {
+        return Some("low".into());
+    }
+    // ASCII tokens. Match as a distinct word so "!urgently" / "bang!urgent"
+    // don't count. A word boundary is "preceded by SOL or whitespace; followed
+    // by EOL, whitespace, or punctuation".
+    for (tok, label) in &[
+        ("!urgent", "urgent"),
+        ("!high", "high"),
+        ("!med", "med"),
+        ("!low", "low"),
+    ] {
+        if has_standalone_token(text, tok) {
+            return Some((*label).into());
+        }
+    }
+    None
+}
+
+fn has_standalone_token(hay: &str, needle: &str) -> bool {
+    let mut start = 0usize;
+    while let Some(idx) = hay[start..].find(needle) {
+        let abs = start + idx;
+        let before_ok = abs == 0
+            || hay[..abs]
+                .chars()
+                .next_back()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(true);
+        let end = abs + needle.len();
+        let after_ok = end == hay.len()
+            || hay[end..]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace() || c.is_ascii_punctuation())
+                .unwrap_or(true);
+        if before_ok && after_ok {
+            return true;
+        }
+        start = abs + needle.len();
+    }
+    false
+}
+
+fn detect_due(text: &str) -> Option<String> {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    // (?:📅\s*|@)?(YYYY-MM-DD)
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"(?:📅\s*|@)?(\d{4}-\d{2}-\d{2})").unwrap()
+    });
+    re.captures(text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
 fn parse_task_line(line: &str) -> Option<TaskHit> {
     // `- [ ]`, `* [x]`, `+ [X]`, `1. [ ]` (ordered list with checkbox too).
     let trimmed = line.trim_start();
     let bytes = trimmed.as_bytes();
 
     // Walk past the list marker. Return (marker_len, rest).
-    let after_marker = if trimmed.starts_with("- ")
-        || trimmed.starts_with("* ")
-        || trimmed.starts_with("+ ")
-    {
-        &trimmed[2..]
-    } else {
-        // Ordered: "1. " / "12. "
-        let mut i = 0;
-        while i < bytes.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-        if i == 0 || i >= bytes.len() || bytes[i] != b'.' {
-            return None;
-        }
-        let rest = &trimmed[i + 1..];
-        rest.strip_prefix(' ')?
-    };
+    let after_marker =
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+            &trimmed[2..]
+        } else {
+            // Ordered: "1. " / "12. "
+            let mut i = 0;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i == 0 || i >= bytes.len() || bytes[i] != b'.' {
+                return None;
+            }
+            let rest = &trimmed[i + 1..];
+            rest.strip_prefix(' ')?
+        };
 
     // Expect `[X]` where X is space, x, or X.
     let ab = after_marker.as_bytes();
@@ -360,6 +463,58 @@ fn find_wiki_links(line: &str, line_offset_abs: usize) -> Vec<(usize, String)> {
             }
         }
         i += 1;
+    }
+    out
+}
+
+/// Find `![alt](path)` occurrences on a single line. Returns (absolute file
+/// offset of `!`, path-as-written). Skips:
+/// - `![[wiki-embed]]` (Obsidian-style; we don't support it in Phase 2)
+/// - Remote URLs (http://, https://, data:, blob:)
+/// - Escaped `\![`
+/// - Occurrences inside backtick code spans (simple heuristic: we don't
+///   mask here since the outer scan already skipped fenced code blocks; the
+///   alt/path text itself never contains unescaped `](` so false positives
+///   inside backticks are acceptable for Phase 2)
+fn find_markdown_images(line: &str, line_offset_abs: usize) -> Vec<(usize, String)> {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        // Non-greedy on path to stop at first ')'. alt text allows anything
+        // except `]`. Escaped `\!` handled separately below.
+        regex::Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap()
+    });
+
+    let bytes = line.as_bytes();
+    let mut out = Vec::new();
+    for cap in re.captures_iter(line) {
+        let m = cap.get(0).unwrap();
+        let start = m.start();
+
+        // Skip escaped `\![...](...)`.
+        if start > 0 && bytes[start - 1] == b'\\' {
+            continue;
+        }
+        // Skip `![[...]]` (wiki embed, not standard markdown image).
+        if start + 2 < bytes.len() && bytes[start + 2] == b'[' {
+            continue;
+        }
+
+        let path = cap.get(2).map(|m| m.as_str().trim()).unwrap_or("");
+        if path.is_empty() {
+            continue;
+        }
+        // Skip remote URLs / data: / blob:.
+        let lower = path.to_ascii_lowercase();
+        if lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("data:")
+            || lower.starts_with("blob:")
+            || lower.starts_with("//")
+        {
+            continue;
+        }
+
+        out.push((line_offset_abs + start, path.to_string()));
     }
     out
 }
@@ -582,8 +737,13 @@ pub fn upsert_note(
             )
             .map_err(map_sql_err)?;
         for l in &parsed.links {
-            stmt.execute(rusqlite::params![rel_path, l.dst, l.link_type, l.position as i64])
-                .map_err(map_sql_err)?;
+            stmt.execute(rusqlite::params![
+                rel_path,
+                l.dst,
+                l.link_type,
+                l.position as i64
+            ])
+            .map_err(map_sql_err)?;
         }
     }
 
@@ -592,7 +752,8 @@ pub fn upsert_note(
     {
         let mut stmt = conn
             .prepare_cached(
-                "INSERT INTO tasks (note_path, line, text, done) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO tasks (note_path, line, text, done, due, priority)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )
             .map_err(map_sql_err)?;
         for t in &parsed.tasks {
@@ -600,7 +761,9 @@ pub fn upsert_note(
                 rel_path,
                 t.line as i64,
                 t.text,
-                if t.done { 1i64 } else { 0i64 }
+                if t.done { 1i64 } else { 0i64 },
+                t.due,
+                t.priority,
             ])
             .map_err(map_sql_err)?;
         }
@@ -611,7 +774,11 @@ pub fn upsert_note(
         .map_err(map_sql_err)?;
     conn.execute(
         "INSERT INTO notes_fts (path, title, body) VALUES (?1, ?2, ?3)",
-        rusqlite::params![rel_path, parsed.title.clone().unwrap_or_default(), parsed.body],
+        rusqlite::params![
+            rel_path,
+            parsed.title.clone().unwrap_or_default(),
+            parsed.body
+        ],
     )
     .map_err(map_sql_err)?;
 
@@ -637,7 +804,7 @@ pub fn resolve_links(conn: &Connection) -> AppResult<()> {
     conn.execute(
         "UPDATE links SET dst_resolved = (
              SELECT path FROM notes WHERE notes.title = links.dst LIMIT 1
-         ) WHERE dst_resolved IS NULL",
+         ) WHERE dst_resolved IS NULL AND link_type = 'wiki'",
         [],
     )
     .map_err(map_sql_err)?;
@@ -650,7 +817,19 @@ pub fn resolve_links(conn: &Connection) -> AppResult<()> {
                notes.path LIKE '%/' || links.dst || '.md'
                 OR notes.path = links.dst || '.md'
              LIMIT 1
-         ) WHERE dst_resolved IS NULL",
+         ) WHERE dst_resolved IS NULL AND link_type = 'wiki'",
+        [],
+    )
+    .map_err(map_sql_err)?;
+
+    // Markdown image embeds: `dst` is already a vault-relative path
+    // (URLs were filtered out in find_markdown_images). Normalize backslashes
+    // to forward slashes so Windows paths compare cleanly with file walker
+    // output, and copy dst → dst_resolved straight through.
+    conn.execute(
+        "UPDATE links
+           SET dst_resolved = REPLACE(dst, '\\', '/')
+         WHERE dst_resolved IS NULL AND link_type = 'embed'",
         [],
     )
     .map_err(map_sql_err)?;
@@ -703,10 +882,7 @@ mod tests {
 
     #[test]
     fn infers_types() {
-        assert_eq!(
-            infer_type_from_path("0-inbox/abc.md", ""),
-            Some("inbox")
-        );
+        assert_eq!(infer_type_from_path("0-inbox/abc.md", ""), Some("inbox"));
         assert_eq!(
             infer_type_from_path("3-journal/2026-04-19.md", ""),
             Some("daily")
@@ -723,6 +899,30 @@ mod tests {
             infer_type_from_path("4-projects/foo/note.md", ""),
             Some("project-note")
         );
+    }
+
+    #[test]
+    fn extracts_task_priority_and_due() {
+        let src = "- [ ] Narrow the opening !urgent\n- [ ] Review draft 3 !med 📅 2026-04-22\n- [ ] Dig deeper @2026-05-01\n- [ ] Ship 🔺 tomorrow\n- [ ] No meta here\n";
+        let parsed = parse_note("3-journal/2026-04-22.md", src);
+        assert_eq!(parsed.tasks.len(), 5);
+        assert_eq!(parsed.tasks[0].priority.as_deref(), Some("urgent"));
+        assert_eq!(parsed.tasks[0].due, None);
+        assert_eq!(parsed.tasks[1].priority.as_deref(), Some("med"));
+        assert_eq!(parsed.tasks[1].due.as_deref(), Some("2026-04-22"));
+        assert_eq!(parsed.tasks[2].priority, None);
+        assert_eq!(parsed.tasks[2].due.as_deref(), Some("2026-05-01"));
+        assert_eq!(parsed.tasks[3].priority.as_deref(), Some("urgent"));
+        assert!(parsed.tasks[4].priority.is_none() && parsed.tasks[4].due.is_none());
+    }
+
+    #[test]
+    fn priority_token_must_be_standalone() {
+        // "!urgently" should not match the !urgent priority token.
+        let src = "- [ ] Avoid doing things !urgently at work\n";
+        let parsed = parse_note("x.md", src);
+        assert_eq!(parsed.tasks.len(), 1);
+        assert_eq!(parsed.tasks[0].priority, None);
     }
 
     #[test]

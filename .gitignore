@@ -9,6 +9,13 @@ yarn-error.log*
 /build
 /.svelte-kit
 /package
+# Sandbox-only workaround residue — when running pnpm check/build
+# inside a FUSE-mounted env that disallows unlink, the original
+# `.svelte-kit` / `build` dirs get renamed to *.bak / *.tmpsymlink so
+# a fresh empty replacement can take over. Never meant to commit.
+/.svelte-kit.*
+/build.bak
+/build.tmpsymlink
 .env
 .env.*
 !.env.example
@@ -23,8 +30,13 @@ yarn-error.log*
 # Editors
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
+
+# Stray temp probe leftover from sandbox FS detection. Cannot unlink
+# under FUSE-mounted dev env, so explicitly ignore.
+/touchtest
 
 # OS
 .DS_Store
@@ -32,3 +44,6 @@ Thumbs.db
 
 # Test artifacts
 coverage/
+playwright-report/
+test-results/
+blob-report/

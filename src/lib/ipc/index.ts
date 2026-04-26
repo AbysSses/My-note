@@ -55,6 +55,12 @@ export async function indexNotesByTag(tag: string): Promise<NoteRef[]> {
   return await invoke<NoteRef[]>('index_notes_by_tag', { tag });
 }
 
+/** Notes carrying one or more tags.
+ *  `matchAll = true` returns the intersection; `false` returns the union. */
+export async function indexNotesByTags(tags: string[], matchAll = true): Promise<NoteRef[]> {
+  return await invoke<NoteRef[]>('index_notes_by_tags', { tags, matchAll });
+}
+
 /** All notes in the vault — cheap lightweight rows, used for completion/palette. */
 export async function indexAllNotes(): Promise<NoteRef[]> {
   return await invoke<NoteRef[]>('index_all_notes');
@@ -86,4 +92,69 @@ export async function indexProjectNotes(slug: string): Promise<NoteRef[]> {
 /** FTS5 full-text search; the backend wraps `query` as a literal phrase. */
 export async function indexSearch(query: string, limit?: number): Promise<SearchHit[]> {
   return await invoke<SearchHit[]>('index_search', { query, limit });
+}
+
+/**
+ * Resolve a `[[wiki-link]]` target to a concrete `NoteRef`. Tries an
+ * exact frontmatter-title match first, then falls back to a filename
+ * stem match — same precedence as the indexer's link-resolution pass.
+ * Returns `null` when the link is unresolved; callers render it as
+ * plain text in that case.
+ *
+ * Used by `ChatPanel.svelte` to make `[[…]]` chips in AI replies
+ * clickable (D2b.5).
+ */
+export async function indexResolveWikiLink(target: string): Promise<NoteRef | null> {
+  return await invoke<NoteRef | null>('index_resolve_wiki_link', { target });
+}
+
+export type TaskPriority = 'urgent' | 'high' | 'med' | 'low';
+
+export interface TaskRow {
+  id: number;
+  note_path: string;
+  note_title: string | null;
+  line: number;
+  text: string;
+  done: boolean;
+  due: string | null;
+  priority: TaskPriority | null;
+}
+
+/** `YYYY-MM-DD` in the user's local timezone. Tasks use local dates because
+ *  they are anchored to the user's day, not to UTC. */
+export function todayIsoLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Open tasks for `today`: due today OR inside the daily note for today.
+ *  Sorted urgent → low, capped at 50. */
+export async function indexTasksToday(today?: string): Promise<TaskRow[]> {
+  return await invoke<TaskRow[]>('index_tasks_today', { today: today ?? todayIsoLocal() });
+}
+
+/** Open tasks with a due date strictly after `today`, earliest first. */
+export async function indexTasksUpcoming(today?: string, limit?: number): Promise<TaskRow[]> {
+  return await invoke<TaskRow[]>('index_tasks_upcoming', {
+    today: today ?? todayIsoLocal(),
+    limit: limit ?? null
+  });
+}
+
+/** Count of all open (`done = 0`) tasks across the vault. */
+export async function indexTasksCount(): Promise<number> {
+  return await invoke<number>('index_tasks_count');
+}
+
+/** Flip `[ ]` ↔ `[x]` on a specific line of a note; re-indexes on completion. */
+export async function toggleTaskDone(
+  notePath: string,
+  line: number,
+  done: boolean
+): Promise<void> {
+  await invoke<void>('toggle_task_done', { notePath, line, done });
 }

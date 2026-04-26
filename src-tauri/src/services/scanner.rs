@@ -95,11 +95,7 @@ pub fn full_scan(conn: &Mutex<Connection>, vault: &Path) -> AppResult<ScanSummar
 }
 
 /// Incremental single-file re-index. Used by the notify watcher.
-pub fn reindex_one(
-    conn: &Mutex<Connection>,
-    vault: &Path,
-    rel_path: &str,
-) -> AppResult<()> {
+pub fn reindex_one(conn: &Mutex<Connection>, vault: &Path, rel_path: &str) -> AppResult<()> {
     let abs = vault.join(rel_path);
     if !abs.exists() {
         let conn = conn.lock().unwrap();

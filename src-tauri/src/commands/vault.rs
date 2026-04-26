@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::db;
 use crate::error::{AppError, AppResult};
+use crate::services::ai::embedding_store::EmbeddingStore;
 use crate::services::{scanner, watcher};
 use crate::AppState;
 
@@ -60,7 +61,10 @@ const BUNDLED_TEMPLATES: &[(&str, &str)] = &[
 
 #[tauri::command]
 pub fn vault_is_initialized(path: String) -> bool {
-    Path::new(&path).join(MYNOTES_DIR).join(CONFIG_FILE).exists()
+    Path::new(&path)
+        .join(MYNOTES_DIR)
+        .join(CONFIG_FILE)
+        .exists()
 }
 
 #[tauri::command]
@@ -203,6 +207,9 @@ fn attach_index(state: &State<AppState>, vault: &Path) -> AppResult<()> {
     // Stop any existing watcher before swapping the DB — otherwise a trailing
     // event from the old vault could land on the new connection.
     *state.watcher.lock().unwrap() = None;
+    // Drop the previous vault's embedding store so file handles are released
+    // before we open the new one. Harmless if none existed.
+    *state.embeddings.lock().unwrap() = None;
 
     let conn = db::open_for_vault(&state.app_support_dir, vault)?;
     let handle = Arc::new(Mutex::new(conn));
@@ -217,7 +224,27 @@ fn attach_index(state: &State<AppState>, vault: &Path) -> AppResult<()> {
     }
     *state.index.lock().unwrap() = Some(handle.clone());
 
-    match watcher::start_watcher(handle, vault.to_path_buf()) {
+    // Embedding store sits at `<vault>/.mynotes/ai/embeddings.sqlite`. We open
+    // lazily — failing to open is **non-fatal**: the rest of the app works
+    // fine without AI embedding, so log and continue rather than aborting
+    // vault open. The user finds out the store is missing on the first
+    // `ai_embed_note` call (which surfaces the error cleanly).
+    let emb_path = vault.join(".mynotes").join("ai").join("embeddings.sqlite");
+    match EmbeddingStore::open(&emb_path) {
+        Ok(store) => {
+            *state.embeddings.lock().unwrap() = Some(Arc::new(Mutex::new(store)));
+        }
+        Err(e) => {
+            tracing::warn!(path = %emb_path.display(), error = %e, "embedding store failed to open — AI disabled");
+        }
+    }
+
+    match watcher::start_watcher(
+        handle,
+        vault.to_path_buf(),
+        state.config.clone(),
+        state.embeddings_handle(),
+    ) {
         Ok(w) => *state.watcher.lock().unwrap() = Some(w),
         Err(e) => tracing::warn!(error = %e, "watcher failed to start — live updates disabled"),
     }
@@ -295,4 +322,3 @@ pub fn resolve_in_vault(active_vault: &Option<PathBuf>, rel: &str) -> AppResult<
         canon.join(suffix)
     })
 }
-

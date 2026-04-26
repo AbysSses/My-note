@@ -168,26 +168,31 @@
 
 <style>
   .projects-section {
-    border-top: 1px solid var(--color-border);
+    box-shadow: inset 0 1px 0 var(--color-border);
     margin-top: var(--space-2);
+    padding-top: var(--space-1);
   }
   .projects-header {
     display: flex;
     align-items: center;
     width: 100%;
     gap: 6px;
-    padding: 6px 10px;
+    padding: 8px 12px;
     background: transparent;
     border: none;
-    color: var(--color-fg-muted);
+    box-shadow: none;
+    color: var(--color-fg-dim);
+    font-family: var(--font-mono);
     font-size: var(--fs-xs);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-weight: 500;
     cursor: pointer;
   }
   .projects-header:hover {
     color: var(--color-fg);
+    background: transparent;
+    transform: none;
   }
   .chev {
     width: 14px;
@@ -226,6 +231,7 @@
     padding: 2px 10px 2px 22px;
     background: transparent;
     border: none;
+    box-shadow: none;
     color: var(--color-fg-muted);
     font-size: 11px;
     font-weight: 500;
@@ -233,6 +239,8 @@
   }
   .group-header:hover {
     color: var(--color-fg);
+    background: transparent;
+    transform: none;
   }
   ul {
     list-style: none;
@@ -242,32 +250,38 @@
   .proj-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 3px 10px 3px 40px;
+    gap: 8px;
+    width: calc(100% - 12px);
+    margin: 1px 6px;
+    padding: 5px 10px 5px 32px;
     border: none;
     background: transparent;
+    box-shadow: none;
     text-align: left;
     color: inherit;
     font-size: 13px;
     cursor: pointer;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s ease, transform 0.15s ease;
   }
   .proj-row:hover {
     background: var(--color-bg-hover);
+    transform: translateX(2px);
   }
   .proj-row.active {
     background: var(--color-bg-hover);
-    color: var(--color-accent);
+    color: var(--color-fg);
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .dot {
-    color: var(--color-fg-muted);
+    color: var(--color-fg-dim);
     font-size: 8px;
     width: 8px;
     text-align: center;
   }
   .proj-row.active .dot {
     color: var(--color-accent);
+    text-shadow: var(--accent-glow);
   }
   .name {
     flex: 1;

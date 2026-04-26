@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quire — AI chat & writing workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; overflow: hidden; }
+  body { font-family: "Inter Tight", "Inter", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  button.chip:hover { background: rgba(127,127,127,0.06) !important; color: inherit; }
+  button:hover { filter: brightness(1.03); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.15); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.3); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  input[type="range"] { -webkit-appearance: none; appearance: none; background: rgba(255,255,255,0.08); border-radius: 999px; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px rgba(0,0,0,0.3); cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="macos-window.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="windows-frame.jsx"></script>
+<script type="text/babel" src="app-core.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "dark": false,
+  "accent": "terracotta",
+  "radius": 0.7,
+  "glow": 0.6,
+  "bgTint": 0.7,
+  "density": "balanced"
+}/*EDITMODE-END*/;
+
+// ──────────────────────────────────────────────────────────────────────────
+// Framed compositions per surface
+// ──────────────────────────────────────────────────────────────────────────
+
+function MacCompose({ config }) {
+  return (
+    <ThemeProvider value={config}>
+      <div data-screen-label="macOS · Quire" style={{
+        width: 1180, height: 760, borderRadius: 26, overflow: 'hidden',
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.18), 0 24px 80px rgba(0,0,0,0.35)',
+        position: 'relative',
+      }}>
+        {/* Our own titlebar — baked into the themed background */}
+        <MacTitleBar config={config} />
+        <div style={{ position: 'absolute', inset: '36px 0 0 0' }}>
+          <AppWorkspace />
+        </div>
+      </div>
+    </ThemeProvider>
+  );
+}
+
+function MacTitleBar({ config }) {
+  const dark = config.dark;
+  return (
+    <div style={{
+      height: 36, display: 'flex', alignItems: 'center',
+      padding: '0 14px',
+      background: dark ? 'oklch(0.17 0.015 275)' : 'oklch(0.98 0.003 70)',
+      borderBottom: `0.5px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(40,30,20,0.06)'}`,
+      position: 'relative', zIndex: 10,
+    }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f57', border: '0.5px solid rgba(0,0,0,0.15)' }} />
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#febc2e', border: '0.5px solid rgba(0,0,0,0.15)' }} />
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#28c840', border: '0.5px solid rgba(0,0,0,0.15)' }} />
+      </div>
+      <div style={{
+        flex: 1, textAlign: 'center',
+        fontSize: 12, color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(40,30,20,0.5)',
+        letterSpacing: 0.1,
+      }}>Quire — On silence</div>
+      <div style={{ width: 60 }} />
+    </div>
+  );
+}
+
+function WinCompose({ config }) {
+  return (
+    <ThemeProvider value={config}>
+      <div data-screen-label="Windows 11 · Quire">
+        <WinWindow width={1080} height={720} title="Quire — On silence" dark={config.dark}>
+          <AppWorkspace />
+        </WinWindow>
+      </div>
+    </ThemeProvider>
+  );
+}
+
+// iOS — chat only (doc as second screen implicit)
+function IOSCompose({ config, screen = 'chat' }) {
+  const mobileConfig = { ...config, density: 'tight' };
+  return (
+    <ThemeProvider value={mobileConfig}>
+      <div data-screen-label={`iOS · ${screen}`}>
+        <IOSDevice width={402} height={874} dark={config.dark}>
+          <IOSScreen screen={screen} />
+        </IOSDevice>
+      </div>
+    </ThemeProvider>
+  );
+}
+
+function IOSScreen({ screen }) {
+  const t = useTheme();
+  return (
+    <div style={{
+      background: t.bg, color: t.fg,
+      height: '100%', display: 'flex', flexDirection: 'column',
+      paddingTop: 54,
+    }}>
+      {/* header */}
+      <div style={{
+        padding: '10px 20px 12px',
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 11,
+          background: `linear-gradient(135deg, ${t.accentColor}, oklch(0.5 0.14 290))`,
+          boxShadow: t.accentGlow,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontFamily: '"Fraunces", serif', fontWeight: 500, fontSize: 16,
+        }}>Q</div>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontFamily: '"Fraunces", serif',
+            fontSize: 17, letterSpacing: -0.2, color: t.fg,
+          }}>On silence</div>
+          <div style={{
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: 10, letterSpacing: 0.6, color: t.fgDim,
+          }}>draft · 3</div>
+        </div>
+        <div style={{
+          width: 34, height: 34, borderRadius: 11,
+          background: t.surface,
+          boxShadow: t.paneBorder,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: t.fgMuted,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2"/>
+            <circle cx="7" cy="7" r="2" fill="currentColor"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* seg: Chat / Canvas */}
+      <div style={{
+        padding: '4px 20px 14px',
+        display: 'flex', gap: 4,
+      }}>
+        <div style={{
+          padding: '8px 14px', borderRadius: 999,
+          background: screen === 'chat' ? t.accentSoft : 'transparent',
+          color: screen === 'chat' ? t.accentColor : t.fgMuted,
+          fontSize: 12, fontWeight: 500, letterSpacing: -0.1,
+          border: `1px solid ${screen === 'chat' ? 'transparent' : t.line}`,
+        }}>Chat</div>
+        <div style={{
+          padding: '8px 14px', borderRadius: 999,
+          background: screen === 'canvas' ? t.accentSoft : 'transparent',
+          color: screen === 'canvas' ? t.accentColor : t.fgMuted,
+          fontSize: 12, fontWeight: 500, letterSpacing: -0.1,
+          border: `1px solid ${screen === 'canvas' ? 'transparent' : t.line}`,
+        }}>Canvas</div>
+        <div style={{ flex: 1 }} />
+        <div style={{
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: 10, color: t.fgDim, alignSelf: 'center',
+        }}>A · B · C</div>
+      </div>
+
+      {screen === 'chat' ? <IOSChat /> : <IOSCanvas />}
+    </div>
+  );
+}
+
+function IOSChat() {
+  const t = useTheme();
+  return (
+    <>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+        {SAMPLE_CONVO.map((m, i) => (
+          <Message key={i} m={m} compact={true} />
+        ))}
+      </div>
+      {/* floating composer */}
+      <div style={{ padding: '4px 14px 22px' }}>
+        <div style={{
+          borderRadius: 22,
+          background: t.surfaceRaised,
+          boxShadow: t.paneBorder,
+          padding: '10px 14px',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1v5M7 8v5M1 7h5M8 7h5" stroke={t.fgMuted} strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+          <div style={{
+            flex: 1, color: t.fgDim, fontSize: 14,
+          }}>Ask or reply…</div>
+          <div style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: t.accentColor,
+            boxShadow: t.accentGlow,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M7 12V2M3 6l4-4 4 4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function IOSCanvas() {
+  const t = useTheme();
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 40px' }}>
+      <div style={{
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: 10, letterSpacing: 0.8, color: t.fgDim, textTransform: 'uppercase',
+        marginBottom: 10,
+      }}>Opening — option A</div>
+      <h1 style={{
+        fontFamily: '"Fraunces", serif',
+        fontSize: 28, fontWeight: 400, letterSpacing: -0.6, lineHeight: 1.1,
+        margin: 0, color: t.fg, textWrap: 'pretty',
+      }}>
+        <span style={{ fontStyle: 'italic', color: t.accentColor }}>Silence</span> is not an empty room.
+      </h1>
+      <p style={{
+        marginTop: 16, fontSize: 15, lineHeight: 1.6, color: t.fg, letterSpacing: -0.1,
+      }}>
+        It's a room we've stopped seeing because nothing is moving. Step into one — the good kind, the kind that happens in a stairwell at 6 a.m. or between two friends who've run out of small things to say — and the room begins to fill.
+      </p>
+      <div style={{
+        marginTop: 22, padding: '12px 14px', borderRadius: 18,
+        background: t.dark ? 'rgba(255,255,255,0.03)' : 'rgba(40,30,20,0.025)',
+        boxShadow: `inset 0 1px 0 ${t.dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.9)'}`,
+      }}>
+        <div style={{
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: 10, letterSpacing: 0.8, color: t.fgMuted, textTransform: 'uppercase',
+          marginBottom: 4,
+        }}>inline suggestion</div>
+        <div style={{ fontSize: 13, color: t.fg, lineHeight: 1.5 }}>
+          Pull the stairwell image earlier — it's the most alive thing on the page.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// App — Design canvas with three surfaces + light/dark cards + tweaks
+// ──────────────────────────────────────────────────────────────────────────
+
+function App() {
+  const [config, setConfig] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem('quire-config');
+      return saved ? { ...TWEAK_DEFAULTS, ...JSON.parse(saved) } : TWEAK_DEFAULTS;
+    } catch (_) { return TWEAK_DEFAULTS; }
+  });
+  const [tweaksVisible, setTweaksVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    localStorage.setItem('quire-config', JSON.stringify(config));
+  }, [config]);
+
+  // Tweaks protocol
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const d = e.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === '__activate_edit_mode') setTweaksVisible(true);
+      if (d.type === '__deactivate_edit_mode') setTweaksVisible(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const setConfigPersisted = (next) => {
+    setConfig(next);
+    window.parent.postMessage({
+      type: '__edit_mode_set_keys',
+      edits: next,
+    }, '*');
+  };
+
+  // companion config for the opposite mode (for side-by-side light/dark in section 2)
+  const lightConfig = { ...config, dark: false };
+  const darkConfig = { ...config, dark: true };
+
+  return (
+    <>
+      <DesignCanvas>
+        {/* Section 1 — the hero: macOS desktop, current theme */}
+        <DCSection
+          title="Quire"
+          subtitle="An AI chat + writing workspace. Blue-violet near-blacks, hairline highlights, Apple-scale whitespace. Drag the divider · toggle modes · change accent in Tweaks."
+        >
+          <DCArtboard label={`macOS · ${config.dark ? 'dark' : 'light'}`} width={1180} height={760}>
+            <MacCompose config={config} />
+          </DCArtboard>
+        </DCSection>
+
+        {/* Section 2 — light + dark side by side (macOS) */}
+        <DCSection
+          title="Both modes"
+          subtitle="The dark mode leans into soft blue-violet. Light mode stays warm and paper-like, with very subtle ink lines instead of heavy borders."
+        >
+          <DCArtboard label="macOS · light" width={1000} height={640}>
+            <div style={{ transform: 'scale(0.847)', transformOrigin: '0 0', width: 1180, height: 760 }}>
+              <MacCompose config={lightConfig} />
+            </div>
+          </DCArtboard>
+          <DCArtboard label="macOS · dark" width={1000} height={640}>
+            <div style={{ transform: 'scale(0.847)', transformOrigin: '0 0', width: 1180, height: 760 }}>
+              <MacCompose config={darkConfig} />
+            </div>
+          </DCArtboard>
+        </DCSection>
+
+        {/* Section 3 — iOS (chat + canvas) */}
+        <DCSection
+          title="iOS"
+          subtitle="The mobile translation keeps generous spacing and the same glow cues. Chat and Canvas swap via pill tabs."
+        >
+          <DCArtboard label="iOS · chat · dark" width={402} height={874}>
+            <IOSCompose config={{ ...config, dark: true }} screen="chat" />
+          </DCArtboard>
+          <DCArtboard label="iOS · canvas · dark" width={402} height={874}>
+            <IOSCompose config={{ ...config, dark: true }} screen="canvas" />
+          </DCArtboard>
+          <DCArtboard label="iOS · chat · light" width={402} height={874}>
+            <IOSCompose config={{ ...config, dark: false }} screen="chat" />
+          </DCArtboard>
+          <DCArtboard label="iOS · canvas · light" width={402} height={874}>
+            <IOSCompose config={{ ...config, dark: false }} screen="canvas" />
+          </DCArtboard>
+        </DCSection>
+
+        {/* Section 4 — Windows 11 */}
+        <DCSection
+          title="Windows 11"
+          subtitle="Same system, 8px radii and tighter title chrome to feel native."
+        >
+          <DCArtboard label={`Windows 11 · ${config.dark ? 'dark' : 'light'}`} width={1080} height={720}>
+            <WinCompose config={config} />
+          </DCArtboard>
+        </DCSection>
+
+        {/* Section 5 — aesthetic notes */}
+        <DCSection
+          title="System notes"
+          subtitle="The rules that hold the style together across surfaces."
+        >
+          <DCArtboard label="Notes" width={760} height={520}>
+            <SystemNotes />
+          </DCArtboard>
+        </DCSection>
+
+        <DCPostIt top={120} right={40} rotate={3}>
+          Try the Tweaks toggle in the toolbar → accent, glow, radius, tint all live.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel config={config} setConfig={setConfigPersisted} visible={tweaksVisible} />
+    </>
+  );
+}
+
+function SystemNotes() {
+  const swatch = (bg, label, sub) => (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: 12,
+        background: bg,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.3), 0 0 0 0.5px rgba(0,0,0,0.1)',
+      }} />
+      <div>
+        <div style={{ fontSize: 13, color: '#2a2620', letterSpacing: -0.1 }}>{label}</div>
+        <div style={{
+          fontFamily: 'ui-monospace, "JetBrains Mono", monospace',
+          fontSize: 10, color: 'rgba(60,50,40,0.55)',
+        }}>{sub}</div>
+      </div>
+    </div>
+  );
+  return (
+    <div style={{
+      padding: 40, height: '100%', background: '#faf8f3',
+      fontFamily: '"Inter Tight", "Inter", system-ui, sans-serif',
+      color: '#2a2620',
+      display: 'flex', flexDirection: 'column', gap: 24,
+    }}>
+      <div>
+        <div style={{
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase',
+          color: 'rgba(60,50,40,0.5)',
+        }}>Aesthetic</div>
+        <div style={{
+          fontFamily: '"Fraunces", serif',
+          fontSize: 26, fontWeight: 400, letterSpacing: -0.5, marginTop: 4,
+        }}>Quiet, warm, keyboard-first.</div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        {swatch('oklch(0.16 0.012 280)', 'Night', 'oklch(0.16 · 0.012 · 280)')}
+        {swatch('oklch(0.985 0.003 70)', 'Paper', 'oklch(0.985 · 0.003 · 70)')}
+        {swatch('oklch(0.68 0.13 38)', 'Ember (accent)', 'oklch(0.68 · 0.13 · 38)')}
+        {swatch('rgba(255,255,255,0.06)', 'Hairline highlight', 'rgba · 255,255,255 · 0.06')}
+      </div>
+
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: 'rgba(42,38,32,0.8)', textWrap: 'pretty' }}>
+        <strong style={{ color: '#2a2620' }}>Separation without borders.</strong> Panels are split by a 1px inset top highlight, not an outline. In dark mode that highlight is rgba(255,255,255,0.06); in light mode it's a soft top-glow + bottom ink line. This is what makes the UI feel floating rather than boxed.
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, letterSpacing: 0.8, color: 'rgba(60,50,40,0.5)', textTransform: 'uppercase' }}>Type</div>
+          <div style={{ fontSize: 14, marginTop: 4 }}>Fraunces · <span style={{ fontFamily: '"Fraunces", serif' }}>display</span></div>
+          <div style={{ fontSize: 14 }}>Inter Tight · body</div>
+          <div style={{ fontSize: 14, fontFamily: 'ui-monospace, monospace' }}>JetBrains Mono · meta</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, letterSpacing: 0.8, color: 'rgba(60,50,40,0.5)', textTransform: 'uppercase' }}>Radii</div>
+          <div style={{ fontSize: 14, marginTop: 4 }}>Controls · 14 · 18</div>
+          <div style={{ fontSize: 14 }}>Cards · 22 · 26</div>
+          <div style={{ fontSize: 14 }}>Outer · 28 · 32</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, letterSpacing: 0.8, color: 'rgba(60,50,40,0.5)', textTransform: 'uppercase' }}>Glow</div>
+          <div style={{ fontSize: 14, marginTop: 4 }}>Accent is the only color</div>
+          <div style={{ fontSize: 14 }}>Used on state, not chrome</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

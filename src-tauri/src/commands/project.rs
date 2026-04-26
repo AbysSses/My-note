@@ -35,21 +35,14 @@ use crate::AppState;
 ///   `> New Project…`.
 /// - Propagates IO / index errors.
 #[tauri::command]
-pub fn project_set_status(
-    slug: String,
-    status: String,
-    state: State<AppState>,
-) -> AppResult<()> {
+pub fn project_set_status(slug: String, status: String, state: State<AppState>) -> AppResult<()> {
     if slug.is_empty() || slug.contains('/') || slug.contains('\\') || slug == "." || slug == ".." {
         return Err(AppError::Other(format!("invalid project slug: {slug}")));
     }
     let rel_path = format!("4-projects/{slug}/index.md");
 
     let active = state.active_vault.lock().unwrap().clone();
-    let vault = active
-        .as_ref()
-        .ok_or(AppError::NoActiveVault)?
-        .clone();
+    let vault = active.as_ref().ok_or(AppError::NoActiveVault)?.clone();
 
     // Must exist — we do not create projects here.
     let abs = resolve_in_vault(&active, &rel_path)?;
@@ -157,9 +150,7 @@ fn split_leading_frontmatter(body: &str) -> Option<(&str, &str)> {
             // `cursor` is the start of the closing fence line; the FM chunk
             // is everything before it, minus the trailing newline that
             // separates it from the closing fence.
-            let fm = rest[..cursor]
-                .strip_suffix('\n')
-                .unwrap_or(&rest[..cursor]);
+            let fm = rest[..cursor].strip_suffix('\n').unwrap_or(&rest[..cursor]);
             let fm = fm.strip_suffix('\r').unwrap_or(fm);
             let after_start = (next_nl + 1).min(rest.len());
             return Some((fm, &rest[after_start..]));
@@ -185,7 +176,9 @@ fn is_status_line(line: &str) -> bool {
 fn format_yaml_scalar(value: &str) -> String {
     let needs_quote = value.is_empty()
         || value.starts_with(|c: char| c == ' ' || c == '\t' || c == '-')
-        || value.chars().any(|c| matches!(c, ':' | '#' | '"' | '[' | ']' | '{' | '}'));
+        || value
+            .chars()
+            .any(|c| matches!(c, ':' | '#' | '"' | '[' | ']' | '{' | '}'));
     if needs_quote {
         let escaped = value.replace('"', "\\\"");
         format!("\"{escaped}\"")

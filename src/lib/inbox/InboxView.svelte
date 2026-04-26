@@ -130,14 +130,16 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-bg-subtle);
+    padding: 14px 20px;
+    box-shadow: inset 0 -1px 0 var(--color-border);
+    background: transparent;
   }
   header h2 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -176,9 +178,10 @@
   kbd {
     font-family: var(--font-mono);
     font-size: 11px;
-    background: var(--color-bg-subtle);
-    border: 1px solid var(--color-border);
-    border-radius: 3px;
+    background: var(--color-surface-raised);
+    border: 1px solid transparent;
+    box-shadow: var(--pane-border);
+    border-radius: 4px;
     padding: 1px 5px;
   }
   ul {
@@ -192,8 +195,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--color-border);
+    padding: 12px 20px;
+    box-shadow: inset 0 -1px 0 var(--color-border);
   }
   .row:hover {
     background: var(--color-bg-hover);
@@ -246,23 +249,30 @@
     flex-shrink: 0;
   }
   .act {
+    font-family: var(--font-mono);
     font-size: 11px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: var(--color-surface-raised);
+    box-shadow: var(--pane-border);
     cursor: pointer;
   }
   .act:hover {
-    background: var(--color-bg-hover);
+    transform: translateY(-0.5px);
+    background: var(--color-surface-raised);
   }
   .act.promote {
     color: var(--color-accent);
-    border-color: var(--color-accent);
+    box-shadow: var(--pane-border), 0 0 0 1px var(--color-accent-weak);
+  }
+  .act.promote:hover {
+    box-shadow: var(--pane-border), 0 0 0 1px var(--color-accent-weak), var(--accent-glow);
   }
   .act.danger:hover {
     background: var(--color-danger);
     color: var(--color-bg);
-    border-color: var(--color-danger);
+    box-shadow: var(--pane-border), 0 0 0 1px rgba(220, 38, 38, 0.3);
   }
 </style>

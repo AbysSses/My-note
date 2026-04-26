@@ -1,25 +1,50 @@
 :root {
+  /* accent palette: swap hue + chroma to switch accent family.
+     Defaults = terracotta. See TweaksPanel for preset pairs. */
+  --accent-hue: 38;
+  --accent-chroma: 0.13;
+  --accent-lightness: 0.62; /* light mode */
+
+  /* live tweaks — all default to 1 (neutral). */
+  --radius-scale: 1;
+  --glow-scale: 1;
+  --bg-tint: 0.7;
+  --density-scale: 1; /* tight=0.75, balanced=1, airy=1.3 */
+
   /* color - Light Mode (Quire Aesthetic) */
   --color-bg: oklch(0.981 0.004 49);
-  --color-bg-subtle: oklch(0.981 0.004 49); /* we'll make base app bg this color */
+  --color-bg-subtle: oklch(0.981 0.004 49);
   --color-surface: oklch(0.992 0.002 49);
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: oklch(0.965 0.004 60);
   --color-card: var(--color-surface);
   --color-bg-hover: rgba(40, 30, 20, 0.035);
   --color-fg: oklch(0.18 0.008 60);
   --color-fg-muted: oklch(0.48 0.01 60);
   --color-fg-dim: oklch(0.62 0.008 60);
   --color-border: rgba(40, 30, 20, 0.07);
-  --color-accent: oklch(0.62 0.13 38);
-  --color-accent-weak: oklch(0.62 0.13 38 / 0.18);
+  --color-border-strong: rgba(40, 30, 20, 0.12);
+  --color-accent: oklch(var(--accent-lightness) var(--accent-chroma) var(--accent-hue));
+  --color-accent-weak: oklch(var(--accent-lightness) var(--accent-chroma) var(--accent-hue) / 0.18);
+  --color-accent-softer: oklch(var(--accent-lightness) var(--accent-chroma) var(--accent-hue) / 0.08);
+  --accent-glow: 0 0 calc(44px * var(--glow-scale)) -4px oklch(var(--accent-lightness) var(--accent-chroma) var(--accent-hue) / calc(0.54 * var(--glow-scale)));
+  --accent-glow-soft: 0 0 calc(20px * var(--glow-scale)) -4px oklch(var(--accent-lightness) var(--accent-chroma) var(--accent-hue) / calc(0.34 * var(--glow-scale)));
   --color-success: #16a34a;
   --color-warning: #d97706;
   --color-danger: #dc2626;
+
+  /* priority palette (light) */
+  --color-urgent: oklch(0.58 0.17 28);
+  --color-high:   oklch(0.62 0.13 38);
+  --color-med:    oklch(0.68 0.11 80);
+  --color-low:    oklch(0.58 0.08 220);
 
   /* glassmorphism & panels */
   --glass-bg: oklch(0.981 0.004 49 / 0.85);
   --glass-border: rgba(40, 30, 20, 0.07);
   --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
   --pane-border: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(40, 30, 20, 0.04), 0 8px 24px -12px rgba(40, 30, 20, 0.12);
+  --float-shadow: 0 24px 60px rgba(40, 30, 20, 0.14), 0 0 0 0.5px rgba(40, 30, 20, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.95);
 
   /* typography */
   --font-sans: 'Inter Tight', 'Inter', system-ui, sans-serif;
@@ -33,50 +58,59 @@
   --fs-2xl: 24px;
   --fs-3xl: 32px;
 
-  /* spacing (multiples of 4px) */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
+  /* spacing (multiples of 4px, scaled by density) */
+  --space-1: calc(4px * var(--density-scale));
+  --space-2: calc(8px * var(--density-scale));
+  --space-3: calc(12px * var(--density-scale));
+  --space-4: calc(16px * var(--density-scale));
+  --space-5: calc(20px * var(--density-scale));
+  --space-6: calc(24px * var(--density-scale));
+  --space-8: calc(32px * var(--density-scale));
 
-  /* radius */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
+  /* radius (scaled by radius-scale) */
+  --radius-xs: calc(5px * var(--radius-scale));
+  --radius-sm: calc(8px * var(--radius-scale));
+  --radius-md: calc(12px * var(--radius-scale));
+  --radius-lg: calc(18px * var(--radius-scale));
+  --radius-xl: calc(24px * var(--radius-scale));
+  --radius-xxl: calc(32px * var(--radius-scale));
 
   /* layout sizes */
-  --sidebar-width: 280px;
+  --rail-width: 56px;
+  --sidebar-width: 300px; /* knowledge-base column */
   --panel-width: 300px;
   --statusbar-height: 28px;
 }
 
 /* Explicit override (takes precedence over OS preference). */
 :root[data-theme='dark'] {
+  --accent-lightness: 0.72;
   --color-bg: oklch(0.159 0.014 284);
   --color-bg-subtle: oklch(0.159 0.014 284);
   --color-surface: oklch(0.196 0.015 285);
+  --color-surface-raised: oklch(0.215 0.010 275);
+  --color-surface-sunken: oklch(0.135 0.013 280);
   --color-card: var(--color-surface);
   --color-bg-hover: rgba(255, 255, 255, 0.04);
   --color-fg: oklch(0.96 0.005 270);
   --color-fg-muted: oklch(0.72 0.01 270);
   --color-fg-dim: oklch(0.52 0.012 270);
   --color-border: rgba(255, 255, 255, 0.055);
-  --color-accent: oklch(0.72 0.13 38);
-  --color-accent-weak: oklch(0.72 0.13 38 / 0.18);
+  --color-border-strong: rgba(255, 255, 255, 0.10);
   --pane-border: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.4), 0 1px 0 rgba(0, 0, 0, 0.3);
-  --glass-bg: oklch(0.159 0.014 284 / 0.85);
-  --glass-border: rgba(255, 255, 255, 0.055);
+  --float-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* priority palette (dark) */
+  --color-urgent: oklch(0.70 0.17 28);
+  --color-high:   oklch(0.75 0.13 38);
+  --color-med:    oklch(0.78 0.11 80);
+  --color-low:    oklch(0.68 0.08 220);
 
   --color-success: #4ade80;
   --color-warning: #fbbf24;
   --color-danger: #f87171;
 
-  /* glassmorphism dark */
-  --glass-bg: rgba(35, 34, 32, 0.85);
+  --glass-bg: oklch(0.159 0.014 284 / 0.85);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 
@@ -90,19 +124,32 @@
 /* System default — only applies when the user hasn't picked a theme manually. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --color-bg: #1A1918;
-    --color-bg-subtle: #232220;
-    --color-bg-hover: #312F2D;
-    --color-fg: #E1DFD9;
-    --color-fg-muted: #8E8B83;
-    --color-border: #3A3835;
-    --color-accent: #D47761;
-    --color-accent-weak: rgba(212, 119, 97, 0.15);
+    --accent-lightness: 0.72;
+    --color-bg: oklch(0.159 0.014 284);
+    --color-bg-subtle: oklch(0.159 0.014 284);
+    --color-surface: oklch(0.196 0.015 285);
+    --color-surface-raised: oklch(0.215 0.010 275);
+    --color-surface-sunken: oklch(0.135 0.013 280);
+    --color-card: var(--color-surface);
+    --color-bg-hover: rgba(255, 255, 255, 0.04);
+    --color-fg: oklch(0.96 0.005 270);
+    --color-fg-muted: oklch(0.72 0.01 270);
+    --color-fg-dim: oklch(0.52 0.012 270);
+    --color-border: rgba(255, 255, 255, 0.055);
+    --color-border-strong: rgba(255, 255, 255, 0.10);
+    --pane-border: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.4), 0 1px 0 rgba(0, 0, 0, 0.3);
+    --float-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+    --color-urgent: oklch(0.70 0.17 28);
+    --color-high:   oklch(0.75 0.13 38);
+    --color-med:    oklch(0.78 0.11 80);
+    --color-low:    oklch(0.68 0.08 220);
+
     --color-success: #4ade80;
     --color-warning: #fbbf24;
     --color-danger: #f87171;
 
-    --glass-bg: rgba(35, 34, 32, 0.85);
+    --glass-bg: oklch(0.159 0.014 284 / 0.85);
     --glass-border: rgba(255, 255, 255, 0.08);
     --glass-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 
@@ -130,19 +177,17 @@ button {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
-  background: var(--color-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  background: var(--color-surface-raised);
+  border: 1px solid transparent;
+  box-shadow: var(--pane-border);
   border-radius: var(--radius-sm);
   padding: 6px 12px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 button:hover {
   background: var(--color-bg-hover);
-  border-color: var(--color-border);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   transform: translateY(-0.5px);
 }
 
@@ -153,9 +198,31 @@ button:active {
 button.primary {
   background: var(--color-accent);
   color: white;
-  border-color: var(--color-accent);
+  border-color: transparent;
+  box-shadow: var(--pane-border), var(--accent-glow);
 }
 
 button.primary:hover {
-  opacity: 0.9;
+  opacity: 0.92;
+  transform: translateY(-0.5px);
+}
+
+/* Quire "meta" label — uppercase mono caption for section headers, counts,
+   path hints. Use on labels that announce structure rather than content. */
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-dim);
+}
+
+/* Accent dot — a 6px round glow marker for "active / live" states. */
+.accent-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  box-shadow: var(--accent-glow);
 }

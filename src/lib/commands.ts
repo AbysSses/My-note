@@ -7,6 +7,7 @@
  */
 
 import { fileDelete, fileExists, fileRead, fileWrite } from './ipc/file';
+import type { NoteRef } from './ipc/index';
 import { formatDate, isoWeek, isoWeekString, render } from './template';
 
 export interface CommandDeps {
@@ -308,6 +309,245 @@ export async function promoteInboxNote(
   await deps.refreshTree();
   await deps.openFile(dstPath);
   return dstPath;
+}
+
+/**
+ * Build the body of a newly extracted note from a selected block.
+ *
+ * This is a **pure** string transform. The caller owns the surrounding file
+ * orchestration: creating the destination path, writing the new note, replacing
+ * the original range with a wiki-link, and refreshing UI state.
+ *
+ * Design notes
+ * ------------
+ * * The new note reuses `rewriteFrontmatter`-style minimal frontmatter
+ *   (title / type=note / status=draft / created=updated=now). We don't load
+ *   `templates/note.md` because template rendering would prepend the `#
+ *   title` heading, which we *don't* want here — the extracted block is
+ *   kept verbatim so headings inside it stay intact.
+ * * The happy-path wiki-link form is `[[title]]`, not `[[1-notes/slug]]`,
+ *   because the resolver treats title-lookup as first-class (see §5.4). If
+ *   the generated filename has to take a `-N` suffix due to a collision, we
+ *   fall back to a path+alias form (`[[1-notes/slug-N|title]]`) so the link
+ *   still resolves to the newly created note rather than an older homonym.
+ * * Trailing/leading whitespace is stripped from the extracted text before
+ *   it becomes the new body, so `## heading\n\ncontent\n\n` in the middle
+ *   of a paragraph doesn't leak phantom blank lines into the new file.
+ * * If `[[title]]` ends up adjacent to other content on the same line,
+ *   we leave it alone — the caller is the one who sliced the range, so
+ *   they know whether it was a whole paragraph or an inline chunk.
+ */
+export function buildExtractedNote(
+  extractedText: string,
+  title: string,
+  now: string
+): string {
+  const trimmed = extractedText.trim();
+  const fmLines = [
+    `title: ${formatYamlScalar(title)}`,
+    `type: note`,
+    `status: draft`,
+    `created: ${formatYamlScalar(now)}`,
+    `updated: ${formatYamlScalar(now)}`,
+    `tags: []`,
+    `aliases: []`
+  ];
+  return `---\n${fmLines.join('\n')}\n---\n\n# ${title}\n\n${trimmed}\n`;
+}
+
+/**
+ * Full orchestration of block extraction — run from the Svelte layer.
+ *
+ * 1. Slugify title, find a free `1-notes/<slug>[-N].md` slot.
+ * 2. Write the new note (atomic).
+ * 3. Return `{ dstPath, linkText }` so the caller can splice
+ *    `linkText` into the editor at the extraction range.
+ *
+ * Failure semantics: any IPC error propagates. On success the source file
+ * is **not** touched by this function — the caller owns the editor
+ * dispatch that replaces the selection, and the subsequent `fileWrite` of
+ * the updated source body. That way a disk-write failure on the source
+ * doesn't orphan an already-created destination.
+ */
+export async function extractBlockToNote(
+  title: string,
+  extractedText: string
+): Promise<{ dstPath: string; linkText: string }> {
+  const t = title.trim();
+  if (!t) throw new Error('标题不能为空');
+  const slug = slugifyTitle(t);
+  if (!slug) throw new Error('标题无法转换为合法文件名');
+  if (!extractedText.trim()) throw new Error('选中内容为空');
+
+  let dstPath = `1-notes/${slug}.md`;
+  for (let i = 1; (await fileExists(dstPath)) && i < 100; i++) {
+    dstPath = `1-notes/${slug}-${i}.md`;
+  }
+  if (await fileExists(dstPath)) {
+    throw new Error(`找不到空闲的目标文件名: ${dstPath}`);
+  }
+
+  const now = formatDate(new Date(), 'YYYY-MM-DD HH:mm');
+  const body = buildExtractedNote(extractedText, t, now);
+  await fileWrite(dstPath, body);
+
+  const canonicalPath = `1-notes/${slug}.md`;
+  const linkText =
+    dstPath === canonicalPath ? `[[${t}]]` : `[[${dstPath.replace(/\.md$/, '')}|${t}]]`;
+
+  return { dstPath, linkText };
+}
+
+/** Which strategy `injectMocEntries` used to splice the entries in.
+ *  - `sentinel`: the template's `<!-- moc:entries-insertion-point -->` comment
+ *    was found and replaced — the new canonical path, independent of the
+ *    "## 核心笔记" heading text.
+ *  - `legacy`: the old `## 核心笔记\n\n- [[]]` stub was matched (pre-sentinel
+ *    templates, still in the wild on vaults that haven't reseeded).
+ *  - `none`: neither anchor was present. Caller should surface a toast —
+ *    the MOC file has been created but entries were **not** injected, user
+ *    needs to paste them manually or reseed the template. */
+export type MocInjectStrategy = 'sentinel' | 'legacy' | 'none';
+
+/** Sentinel HTML comment placed in `templates/moc.md` that `buildMocFromTag`
+ *  replaces with the rendered entry list. Living as an exported const so
+ *  tests + template authoring stay in sync with the injector. */
+export const MOC_ENTRIES_SENTINEL = '<!-- moc:entries-insertion-point -->';
+
+/**
+ * Pure helper: splice rendered `- [[…]]` entries into a MOC template body,
+ * returning the new body + which strategy matched. Exported for unit tests
+ * so we don't have to stand up a real vault to verify edge cases.
+ *
+ * Strategy precedence:
+ * 1. **sentinel** (`<!-- moc:entries-insertion-point -->`) — the canonical
+ *    anchor in current templates; decouples the injector from heading text.
+ *    The sentinel line itself is consumed (replaced with the entries).
+ * 2. **legacy** (`## 核心笔记\n\n- [[]]`) — kept so vaults with an
+ *    unreseeded old template still work. We only match on the exact stub
+ *    (not "any line under heading"), so a hand-edited old MOC that's already
+ *    populated won't be stomped.
+ * 3. **none** — neither anchor exists. Caller handles the UX fallback.
+ */
+export function injectMocEntries(
+  body: string,
+  entriesMarkdown: string
+): { next: string; strategy: MocInjectStrategy } {
+  if (!entriesMarkdown) return { next: body, strategy: 'none' };
+
+  // Sentinel form: consume the whole sentinel line (optionally surrounded by
+  // whitespace-only content) and replace with the entry block. We tolerate
+  // Windows CRLF via `\r?\n` and an optional trailing newline after the
+  // sentinel so entries slot in without an extra blank line.
+  const SENTINEL_RE = new RegExp(
+    `[ \\t]*${MOC_ENTRIES_SENTINEL.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}[ \\t]*\\r?\\n?`
+  );
+  if (SENTINEL_RE.test(body)) {
+    return {
+      next: body.replace(SENTINEL_RE, `${entriesMarkdown}\n`),
+      strategy: 'sentinel'
+    };
+  }
+
+  // Legacy form: the original pre-sentinel template's exact stub line under
+  // the "## 核心笔记" heading. Deliberately strict to avoid overwriting
+  // user-populated MOCs that just happen to have the heading.
+  const LEGACY_RE = /## 核心笔记\r?\n\r?\n- \[\[\]\]/;
+  if (LEGACY_RE.test(body)) {
+    return {
+      next: body.replace(LEGACY_RE, `## 核心笔记\n\n${entriesMarkdown}`),
+      strategy: 'legacy'
+    };
+  }
+
+  return { next: body, strategy: 'none' };
+}
+
+/**
+ * Build a new MOC at `2-moc/<slug>.md` from a set of tagged notes.
+ *
+ * Workflow:
+ * 1. Slugify the user-provided title; find a free `2-moc/<slug>[-N].md` slot.
+ * 2. Materialise the file via the normal `moc.md` template (so
+ *    frontmatter/structure stays in sync with manual MOC creation).
+ * 3. Post-process: splice the rendered `- [[title]]` entries at the
+ *    template's sentinel (current) or legacy `- [[]]` stub (pre-reseed).
+ *    If neither anchor is present the MOC is still created — we return
+ *    `strategy: 'none'` so the caller can surface a "entries not injected"
+ *    toast rather than silently succeeding.
+ * 4. Expand `2-moc/`, refresh the tree, open the new file.
+ *
+ * Wiki-link form: we emit `[[title]]` (not `[[1-notes/slug]]`). Per §5.4 the
+ * resolver treats title lookup as first-class, and a MOC of bare titles reads
+ * far better than a list of paths. On title collision the resolver picks
+ * deterministically; the caller is expected to rename duplicates before
+ * building the MOC (or accept that the first-lexicographic note wins).
+ *
+ * The `tag` parameter is stored in frontmatter as `moc_source_tag` so later we
+ * can add a "rebuild from tag" affordance — harmless if unused.
+ *
+ * `params.entriesMarkdown` overrides the default flat `- [[title]]` list when
+ * provided — used by the P3-D3.5 `> Draft MOC from tag (AI)` command to inject
+ * AI-grouped entries instead. When omitted (default), the flat list is built
+ * from `noteRefs` as before. `insertedCount` continues to be the count of
+ * `noteRefs` in both cases, so the toast message stays meaningful.
+ */
+export async function buildMocFromTag(
+  deps: CommandDeps,
+  params: { tag: string; title: string; noteRefs: NoteRef[]; entriesMarkdown?: string }
+): Promise<{ dstPath: string; insertedCount: number; strategy: MocInjectStrategy }> {
+  const title = params.title.trim();
+  if (!title) throw new Error('标题不能为空');
+  const slug = slugifyTitle(title);
+  if (!slug) throw new Error('标题无法转换为合法文件名');
+
+  let dstPath = `2-moc/${slug}.md`;
+  for (let i = 1; (await fileExists(dstPath)) && i < 100; i++) {
+    dstPath = `2-moc/${slug}-${i}.md`;
+  }
+  if (await fileExists(dstPath)) {
+    throw new Error(`找不到空闲的目标文件名: ${dstPath}`);
+  }
+
+  const ok = await createNoteFromTemplate(dstPath, { title });
+  if (!ok) throw new Error(`文件已存在: ${dstPath}`);
+
+  const body = await fileRead(dstPath);
+  const lines = params.noteRefs.map((ref) => {
+    const stem = ref.path.replace(/\.md$/, '').split('/').pop() ?? ref.path;
+    const display = ref.title ?? stem;
+    return `- [[${display}]]`;
+  });
+
+  // AI-drafted entries override the flat list when supplied. The override is
+  // treated as already-rendered markdown (with `[[…]]` links), not a
+  // NoteRef[], because D3.5's caller has already validated and reshaped the
+  // AI output. `insertedCount` still reflects the source note count so the
+  // toast ("已注入 N 条") stays accurate regardless of draft strategy.
+  const entriesMarkdown =
+    params.entriesMarkdown?.trim() ? params.entriesMarkdown.trim() : lines.join('\n');
+
+  let insertedCount = 0;
+  let strategy: MocInjectStrategy = 'none';
+  if (entriesMarkdown.length > 0) {
+    const result = injectMocEntries(body, entriesMarkdown);
+    strategy = result.strategy;
+    if (strategy !== 'none') {
+      await fileWrite(dstPath, result.next);
+      insertedCount = lines.length;
+    }
+  }
+
+  // Stamp the source tag into frontmatter (additive; `rewriteFrontmatter`
+  // only touches specified keys).
+  const afterInject = await fileRead(dstPath);
+  const stamped = rewriteFrontmatter(afterInject, { moc_source_tag: params.tag });
+  await fileWrite(dstPath, stamped);
+
+  deps.expandDir('2-moc');
+  await deps.refreshTree();
+  await deps.openFile(dstPath);
+  return { dstPath, insertedCount, strategy };
 }
 
 /** Insert `entry` at the end of the section under the first line matching `heading`.

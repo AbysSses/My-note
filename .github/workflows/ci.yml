@@ -1,0 +1,105 @@
+# Phase 4 Stage 5 — pre-release CI gates.
+#
+# This workflow pins the four gates plan_P3.md §8 calls out as the
+# minimum bar for any branch landing on `main`:
+#
+#   1. `pnpm check`           — svelte-check + tsc on the full app
+#   2. `pnpm build`           — vite + adapter-static produces shippable assets
+#   3. `cargo test --lib`     — Rust unit tests (services, indexer, tools, …)
+#   4. `cargo build`          — full Tauri build (dev profile, no bundling)
+#
+# We add a 5th gate — `pnpm exec playwright test` against a
+# `PUBLIC_E2E=1` preview build — so the agent-chat regression skeleton
+# (`tests/e2e/agent-chat.spec.ts`) gets exercised on every PR.
+#
+# Tauri pulls in GTK / WebKit on Linux, so we install the standard
+# `tauri-action`-style apt deps before `cargo build`. macOS / Windows
+# matrix branches are deferred — the desktop product ships on macOS
+# first and those slots can be added when cross-platform smoke is
+# scoped (Phase 4 backlog).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # One run per ref; in-flight runs cancel on a fresh push so the
+  # Actions queue doesn't pile up while iterating on a PR.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: pnpm check / build / e2e
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm check (svelte-check + tsc)
+        run: pnpm check
+
+      - name: pnpm build (vite + adapter-static)
+        run: pnpm build
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: pnpm e2e (PUBLIC_E2E=1 preview build)
+        run: pnpm exec playwright test
+        env:
+          CI: '1'
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  rust:
+    name: cargo test --lib / cargo build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo test --lib
+        working-directory: src-tauri
+        run: cargo test --lib --no-fail-fast
+
+      - name: cargo build (dev profile)
+        working-directory: src-tauri
+        run: cargo build

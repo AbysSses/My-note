@@ -45,11 +45,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   line INTEGER NOT NULL,
   text TEXT NOT NULL,
   done INTEGER NOT NULL DEFAULT 0,  -- 0/1
-  due TEXT,
+  due TEXT,                          -- ISO YYYY-MM-DD, extracted from task body
+  priority TEXT,                     -- 'urgent' / 'high' / 'med' / 'low', extracted from task body
   completed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
 CREATE INDEX IF NOT EXISTS idx_tasks_note ON tasks(note_path);
+CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   path UNINDEXED,

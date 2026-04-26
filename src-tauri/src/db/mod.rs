@@ -19,7 +19,7 @@ pub mod indexer;
 
 /// Bump this whenever schema.sql changes incompatibly; the DB will be wiped
 /// and rebuilt on next open.
-pub const SCHEMA_VERSION: &str = "1";
+pub const SCHEMA_VERSION: &str = "2";
 
 /// Resolve the on-disk path for a vault's index DB. Creates parent dirs.
 pub fn index_path_for_vault(app_support: &Path, vault_path: &Path) -> AppResult<PathBuf> {
@@ -55,15 +55,23 @@ pub fn open_for_vault(app_support: &Path, vault_path: &Path) -> AppResult<Connec
     let db_path = index_path_for_vault(app_support, vault_path)?;
     let conn = Connection::open(&db_path).map_err(map_sql_err)?;
     apply_pragmas(&conn)?;
-    apply_schema(&conn)?;
 
+    // Check schema version BEFORE applying schema.sql. If an older DB is on
+    // disk and schema.sql adds a column / index to an existing table, the
+    // `CREATE INDEX … new_col` inside a CREATE IF NOT EXISTS batch would
+    // otherwise abort — before we ever get a chance to nuke-and-rebuild.
     let vault_str = vault_path.to_string_lossy().to_string();
-    let needs_rebuild = match (
-        read_meta(&conn, "schema_version")?,
-        read_meta(&conn, "vault_path")?,
-    ) {
-        (Some(sv), Some(vp)) => sv != SCHEMA_VERSION || vp != vault_str,
-        _ => true,
+    let needs_rebuild = if table_exists(&conn, "schema_meta").unwrap_or(false) {
+        match (
+            read_meta(&conn, "schema_version")?,
+            read_meta(&conn, "vault_path")?,
+        ) {
+            (Some(sv), Some(vp)) => sv != SCHEMA_VERSION || vp != vault_str,
+            _ => true,
+        }
+    } else {
+        // Fresh install OR a pre-meta DB — either way, start clean.
+        true
     };
 
     if needs_rebuild {
@@ -80,10 +88,23 @@ pub fn open_for_vault(app_support: &Path, vault_path: &Path) -> AppResult<Connec
         return Ok(conn);
     }
 
+    // Version matches — safe to (idempotently) apply the current schema.
+    apply_schema(&conn)?;
     Ok(conn)
 }
 
-fn apply_pragmas(conn: &Connection) -> AppResult<()> {
+fn table_exists(conn: &Connection, name: &str) -> AppResult<bool> {
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [name],
+            |row| row.get(0),
+        )
+        .map_err(map_sql_err)?;
+    Ok(n > 0)
+}
+
+pub(crate) fn apply_pragmas(conn: &Connection) -> AppResult<()> {
     // `journal_mode = WAL` returns a row (the resulting mode), so `pragma_update`
     // is not usable here — we go through `pragma` which tolerates rows.
     // WAL is the whole point of §5.3's perf note.
@@ -96,7 +117,7 @@ fn apply_pragmas(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-fn apply_schema(conn: &Connection) -> AppResult<()> {
+pub(crate) fn apply_schema(conn: &Connection) -> AppResult<()> {
     conn.execute_batch(include_str!("schema.sql"))
         .map_err(map_sql_err)?;
     Ok(())

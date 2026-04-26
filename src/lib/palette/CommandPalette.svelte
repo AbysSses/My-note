@@ -24,9 +24,10 @@
     open: boolean;
     onClose: () => void;
     ctx: PaletteContext;
+    commandHints?: Record<string, string>;
   }
 
-  const { open, onClose, ctx }: Props = $props();
+  const { open, onClose, ctx, commandHints = {} }: Props = $props();
 
   type Mode = 'file' | 'command' | 'tag' | 'search';
   type Row =
@@ -207,7 +208,7 @@
       if (s >= 0) scored.push({ t, s });
     }
     scored.sort((a, b) => a.s - b.s);
-    return scored;
+    return scored.map((x) => x.t);
   }
 
   function runRow(row: Row) {
@@ -293,17 +294,13 @@
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="backdrop"
-    role="presentation"
-    onclick={onClose}
-    transition:fade={{ duration: 150 }}
-  >
+  <div class="backdrop" role="presentation" onclick={onClose} transition:fade={{ duration: 150 }}>
     <div
       class="palette"
       role="dialog"
       aria-modal="true"
       aria-label="命令面板"
+      tabindex="-1"
       onclick={(e) => e.stopPropagation()}
       transition:fly={{ y: 8, duration: 200 }}
     >
@@ -313,7 +310,9 @@
         onkeydown={onKey}
         placeholder={placeholderFor(modeInfo.mode)}
         class="palette-input"
+        aria-label="搜索笔记、命令、标签或全文"
         autocomplete="off"
+        name="palette-query"
         spellcheck="false"
       />
       <div class="palette-body">
@@ -344,8 +343,8 @@
                   {:else if row.kind === 'command'}
                     <span class="leader">⚡</span>
                     <span class="title">{row.cmd.label}</span>
-                    {#if row.cmd.hint}
-                      <span class="hint-right">{row.cmd.hint}</span>
+                    {#if commandHints[row.cmd.id] ?? row.cmd.hint}
+                      <span class="hint-right">{commandHints[row.cmd.id] ?? row.cmd.hint}</span>
                     {/if}
                   {:else if row.kind === 'tag'}
                     <span class="leader">#</span>
@@ -394,21 +393,22 @@
     background: var(--glass-bg);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border: 1px solid var(--glass-border);
+    border: 1px solid transparent;
     border-radius: var(--radius-lg);
     width: 620px;
     max-width: calc(100vw - 40px);
     max-height: 70vh;
     display: flex;
     flex-direction: column;
-    box-shadow: var(--glass-shadow);
+    box-shadow: var(--pane-border), var(--glass-shadow);
     overflow: hidden;
   }
   .palette-input {
     border: none;
-    border-bottom: 1px solid var(--color-border);
-    padding: 14px 18px;
-    font-size: 15px;
+    box-shadow: inset 0 -1px 0 var(--color-border);
+    padding: 16px 20px;
+    font-family: var(--font-serif);
+    font-size: 17px;
     background: transparent;
     color: var(--color-fg);
     outline: none;
@@ -443,7 +443,9 @@
     color: var(--color-fg);
     cursor: pointer;
     font-size: 13px;
-    transition: background 0.1s ease, transform 0.1s ease;
+    transition:
+      background 0.1s ease,
+      transform 0.1s ease;
   }
   .row.active {
     background: var(--color-bg-hover);
@@ -492,12 +494,14 @@
     white-space: nowrap;
   }
   .palette-footer {
-    border-top: 1px solid var(--color-border);
-    padding: 6px 14px;
+    box-shadow: inset 0 1px 0 var(--color-border);
+    padding: 8px 18px;
     display: flex;
     gap: 12px;
-    font-size: 11px;
-    color: var(--color-fg-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--color-fg-dim);
     flex-wrap: wrap;
   }
   .palette-footer .modes {
@@ -506,10 +510,11 @@
   kbd {
     font-family: var(--font-mono);
     font-size: 10px;
-    background: var(--color-bg-subtle);
-    border: 1px solid var(--color-border);
-    border-radius: 3px;
-    padding: 0 4px;
+    background: var(--color-surface-raised);
+    border: 1px solid transparent;
+    box-shadow: var(--pane-border);
+    border-radius: 4px;
+    padding: 1px 5px;
     margin: 0 2px;
   }
 </style>

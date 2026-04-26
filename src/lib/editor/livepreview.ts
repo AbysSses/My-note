@@ -30,13 +30,7 @@ import {
   type ViewUpdate,
   WidgetType
 } from '@codemirror/view';
-import {
-  type EditorState,
-  Facet,
-  type Range,
-  StateField,
-  type Text
-} from '@codemirror/state';
+import { type EditorState, Facet, type Range, StateField, type Text } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 
 // ---------------------------------------------------------------------------
@@ -202,14 +196,17 @@ function buildDecorations(view: EditorView): DecorationSet {
   const codeRanges: { from: number; to: number }[] = [];
   tree.iterate({
     enter: (n) => {
-      if (n.type.name === 'FencedCode' || n.type.name === 'CodeBlock' || n.type.name === 'InlineCode') {
+      if (
+        n.type.name === 'FencedCode' ||
+        n.type.name === 'CodeBlock' ||
+        n.type.name === 'InlineCode'
+      ) {
         codeRanges.push({ from: n.from, to: n.to });
         return false;
       }
     }
   });
-  const inCodeRange = (pos: number) =>
-    codeRanges.some((r) => pos >= r.from && pos < r.to);
+  const inCodeRange = (pos: number) => codeRanges.some((r) => pos >= r.from && pos < r.to);
 
   for (const { from: vfrom, to: vto } of view.visibleRanges) {
     tree.iterate({
@@ -301,10 +298,7 @@ function buildDecorations(view: EditorView): DecorationSet {
               if (m[1] !== ' ') {
                 // Fade & strike the rest of the line when task is done.
                 decs.push(
-                  Decoration.mark({ class: 'cm-md-task-done' }).range(
-                    bracketStart + 3,
-                    lineObj.to
-                  )
+                  Decoration.mark({ class: 'cm-md-task-done' }).range(bracketStart + 3, lineObj.to)
                 );
               }
               // Fall through to also decorate the bullet itself.
@@ -316,9 +310,7 @@ function buildDecorations(view: EditorView): DecorationSet {
               Decoration.replace({ widget: new BulletWidget() }).range(first.from, first.to)
             );
           } else {
-            decs.push(
-              Decoration.mark({ class: 'cm-md-list-mark' }).range(first.from, first.to)
-            );
+            decs.push(Decoration.mark({ class: 'cm-md-list-mark' }).range(first.from, first.to));
           }
           return;
         }
@@ -347,7 +339,10 @@ function buildDecorations(view: EditorView): DecorationSet {
       decs.push(
         Decoration.mark({
           class: 'cm-md-wikilink',
-          attributes: { 'data-target': target }
+          attributes: {
+            'data-target': target,
+            title: 'Cmd/Ctrl+点击打开'
+          }
         }).range(absFrom, absTo)
       );
 
@@ -484,12 +479,44 @@ export const livePreviewTheme = EditorView.theme({
     background: 'transparent'
   },
   '.cm-md-heading': { color: 'var(--color-fg)' },
-  '.cm-md-h1': { fontFamily: 'var(--font-serif)', fontSize: '2.4em', fontWeight: '400', letterSpacing: '-0.03em', lineHeight: '1.1', marginTop: '1.2em', marginBottom: '0.4em' },
-  '.cm-md-h2': { fontFamily: 'var(--font-serif)', fontSize: '1.8em', fontWeight: '400', letterSpacing: '-0.02em', lineHeight: '1.2', marginTop: '1.1em', marginBottom: '0.3em' },
-  '.cm-md-h3': { fontFamily: 'var(--font-serif)', fontSize: '1.4em', fontWeight: '500', letterSpacing: '-0.01em', lineHeight: '1.3', marginTop: '0.9em', marginBottom: '0.2em' },
+  // Use padding instead of vertical margins on `.cm-line`. Margins create
+  // visual space that CodeMirror's click/position mapping doesn't measure
+  // reliably, which can make the caret land on the wrong line.
+  '.cm-md-h1': {
+    fontFamily: 'var(--font-serif)',
+    fontSize: '2.4em',
+    fontWeight: '400',
+    letterSpacing: '-0.03em',
+    lineHeight: '1.1',
+    paddingTop: '0.55em',
+    paddingBottom: '0.18em'
+  },
+  '.cm-md-h2': {
+    fontFamily: 'var(--font-serif)',
+    fontSize: '1.8em',
+    fontWeight: '400',
+    letterSpacing: '-0.02em',
+    lineHeight: '1.2',
+    paddingTop: '0.45em',
+    paddingBottom: '0.14em'
+  },
+  '.cm-md-h3': {
+    fontFamily: 'var(--font-serif)',
+    fontSize: '1.4em',
+    fontWeight: '500',
+    letterSpacing: '-0.01em',
+    lineHeight: '1.3',
+    paddingTop: '0.32em',
+    paddingBottom: '0.08em'
+  },
   '.cm-md-h4': { fontFamily: 'var(--font-sans)', fontSize: '1.1em', fontWeight: '600' },
   '.cm-md-h5': { fontFamily: 'var(--font-sans)', fontSize: '1em', fontWeight: '600' },
-  '.cm-md-h6': { fontFamily: 'var(--font-sans)', fontSize: '0.95em', fontWeight: '600', color: 'var(--color-fg-muted)' },
+  '.cm-md-h6': {
+    fontFamily: 'var(--font-sans)',
+    fontSize: '0.95em',
+    fontWeight: '600',
+    color: 'var(--color-fg-muted)'
+  },
   '.cm-md-bold': { fontWeight: '600' },
   '.cm-md-italic': { fontStyle: 'italic' },
   '.cm-md-code': {

@@ -32,6 +32,55 @@ notify-debouncer-full = "0.3"
 serde_yaml = "0.9"
 sha2 = "0.10"
 once_cell = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+walkdir = "2"
+pulldown-cmark = { version = "0.11", default-features = false, features = ["html"] }
+opener = "0.7"
+# Phase 4 Stage 3 — `file_delete` (and the `delete_note` destructive
+# tool that drives it through the proposal accept path) used to call
+# `std::fs::remove_file` for permanent delete. We move to `trash` so
+# the OS-native recycle bin keeps a recoverable copy: macOS Finder
+# Trash, Windows Recycle Bin, Linux freedesktop.org Trash spec. The
+# audit log still records every destructive action, but recovery is
+# now one user-side click instead of a git/backup restore.
+trash = "5"
+url = "2"
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "stream"] }
+# tokio is dragged in transitively by tauri (sync / rt-multi-thread enabled);
+# we declare it here so D2b.2's SSE chat stream can spawn background tasks
+# and use `mpsc::channel` without depending on tauri's re-exports.
+tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+# keyring 3 has **no default features**: building without an explicit
+# platform-native backend falls back to the in-memory mock store, which
+# makes `entry.set_password()` silently not persist — `Ok(())` is
+# returned but nothing reaches the real keychain, and the next
+# `get_password()` via a fresh `Entry::new()` can't see it. That's the
+# bug "API key shows as 未存储 right after clicking 保存" traces to.
+# Fix: declare keyring per-target with the native backend enabled.
+#
+# * macOS / iOS → `apple-native`       (Keychain Services)
+# * Windows     → `windows-native`     (Credential Manager)
+# * Linux       → `linux-native-sync-persistent` (keyutils + secret-service,
+#                  survives reboots) + `crypto-rust` so DBus transport
+#                  encryption is provided without needing system OpenSSL
+#                  dev headers at build time.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
+
+[dev-dependencies]
+# tokio is already in [dependencies]; dev-only features are opted-in per test.
 
 [profile.release]
 panic = "abort"

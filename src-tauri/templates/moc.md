@@ -13,6 +13,8 @@ moc_scope: "{{title}}"
 
 ## 核心笔记
 
+<!-- moc:entries-insertion-point -->
+
 - [[]]
 
 ## 延伸阅读

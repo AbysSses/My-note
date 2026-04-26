@@ -36,6 +36,22 @@ pub fn file_write(rel_path: String, content: String, state: State<AppState>) -> 
 /// Delete a file inside the vault, and its index row. Used by Inbox Review
 /// "Delete" and any future trash-style flows. Directory deletion is explicitly
 /// not supported — too easy to nuke the whole vault.
+///
+/// **Phase 4 Stage 3 — Trash semantics.** Files are moved to the
+/// OS-native recycle bin via the `trash` crate (Finder Trash on macOS,
+/// Recycle Bin on Windows, freedesktop.org Trash spec on Linux) instead
+/// of being permanently unlinked. This means an accepted destructive
+/// `delete_note` proposal is now one user-side click away from
+/// recovery. The audit-log entry written by
+/// `ai_record_proposal_resolution` is unchanged — it still records
+/// "user accepted destructive delete" — but the on-disk consequence is
+/// recoverable.
+///
+/// If the platform Trash is unavailable (e.g. user disabled XDG Trash
+/// on Linux, or the file lives on a removable volume without a Trash
+/// folder), `trash::delete` returns an error which we surface to the
+/// frontend rather than silently fall back to `remove_file` — better to
+/// fail loud than quietly destroy data.
 #[tauri::command]
 pub fn file_delete(rel_path: String, state: State<AppState>) -> AppResult<()> {
     let active = state.active_vault.lock().unwrap().clone();
@@ -46,7 +62,11 @@ pub fn file_delete(rel_path: String, state: State<AppState>) -> AppResult<()> {
             "refusing to delete a directory: {rel_path}"
         )));
     }
-    std::fs::remove_file(&target)?;
+    trash::delete(&target).map_err(|e| {
+        AppError::Other(format!(
+            "failed to move {rel_path} to system trash: {e}. The file was NOT deleted."
+        ))
+    })?;
     if let Some(handle) = state.index_handle() {
         if let Err(e) = scanner::delete_one(&handle, &rel_path) {
             tracing::warn!(rel = %rel_path, error = %e, "file_delete: delete_one failed");
@@ -69,10 +89,7 @@ pub fn file_move(from: String, to: String, state: State<AppState>) -> AppResult<
         return Ok(());
     }
     let active = state.active_vault.lock().unwrap().clone();
-    let vault = active
-        .as_ref()
-        .ok_or(AppError::NoActiveVault)?
-        .clone();
+    let vault = active.as_ref().ok_or(AppError::NoActiveVault)?.clone();
 
     let src = resolve_in_vault(&active, &from)?;
     if !src.exists() {
@@ -113,6 +130,62 @@ pub fn file_move(from: String, to: String, state: State<AppState>) -> AppResult<
     Ok(())
 }
 
+/// Reveal a file or directory in the OS file manager.
+///
+/// macOS → `open -R <abs>` which selects the item inside Finder.
+/// Linux → `xdg-open <parent>` (xdg-open has no "select" verb, so we open the
+///   containing directory instead; the target file will be visible but not
+///   pre-selected).
+/// Windows → `explorer /select,<abs>`.
+///
+/// Errors from the spawn are converted to `AppError::Other` so the frontend
+/// can surface them. We spawn and detach (don't wait), matching the "click
+/// and forget" UX.
+#[tauri::command]
+pub fn path_reveal(rel_path: String, state: State<AppState>) -> AppResult<()> {
+    let active = state.active_vault.lock().unwrap().clone();
+    let abs = resolve_in_vault(&active, &rel_path)?;
+    if !abs.exists() {
+        return Err(AppError::Other(format!(
+            "reveal: path does not exist: {rel_path}"
+        )));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&abs)
+            .spawn()
+            .map_err(|e| AppError::Other(format!("reveal: open -R failed: {e}")))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-open has no reveal-in-parent verb. Fall back to opening the
+        // containing directory; for directories themselves, open that dir.
+        let target = if abs.is_dir() {
+            abs.clone()
+        } else {
+            abs.parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| abs.clone())
+        };
+        std::process::Command::new("xdg-open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| AppError::Other(format!("reveal: xdg-open failed: {e}")))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", abs.display()))
+            .spawn()
+            .map_err(|e| AppError::Other(format!("reveal: explorer failed: {e}")))?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn file_exists(rel_path: String, state: State<AppState>) -> AppResult<bool> {
     let active = state.active_vault.lock().unwrap().clone();
@@ -128,9 +201,11 @@ pub fn file_list(rel_dir: String, state: State<AppState>) -> AppResult<Vec<DirEn
     let base = resolve_in_vault(&active, &rel_dir)?;
     // Use canonicalized vault root for prefix stripping, so it matches
     // `read_dir` output (which returns paths based on the dir passed in).
-    let vault_canon = std::fs::canonicalize(active.as_ref().ok_or(
-        crate::error::AppError::NoActiveVault,
-    )?)?;
+    let vault_canon = std::fs::canonicalize(
+        active
+            .as_ref()
+            .ok_or(crate::error::AppError::NoActiveVault)?,
+    )?;
 
     let mut entries: Vec<DirEntry> = Vec::new();
     for entry in std::fs::read_dir(&base)? {
